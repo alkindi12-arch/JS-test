@@ -2,10 +2,15 @@
 
 Minimal Next.js 15 app to verify **Hostinger Node.js Web Apps** actually runs `next start` and serves API routes (not only LiteSpeed/static `public_html`).
 
+**Standalone repo:** [github.com/alkindi12-arch/JS-test](https://github.com/alkindi12-arch/JS-test) — clone that and deploy with **Root directory** `.` or empty.
+
+**Inside `KDR-app` monorepo:** this folder also exists at `hostinger-node-smoke-test/`; use **Root directory** `hostinger-node-smoke-test`.
+
 ## Local check
 
 ```bash
-cd hostinger-node-smoke-test
+git clone https://github.com/alkindi12-arch/JS-test.git
+cd JS-test
 npm install
 npm run build
 npm run start
