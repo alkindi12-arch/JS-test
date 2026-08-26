@@ -27,3 +27,10 @@ Collected during brainstorming (2026-08-26). Listings change; verify before citi
 
 ## Hardware measure & draw
 - [Moasure](https://apps.apple.com/us/app/moasure/id1561726410)
+
+## Live LiDAR / RoomPlan references
+- [Apple RoomPlan](https://developer.apple.com/augmented-reality/roomplan/)
+- [Vision DetectRectanglesRequest](https://developer.apple.com/documentation/vision/detectrectanglesrequest)
+- [iLidar](https://ilidar.app/)
+- [ArchScan Pro](https://archscan.pro/)
+- See also [lidar-live-measure.md](lidar-live-measure.md)

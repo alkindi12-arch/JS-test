@@ -4,7 +4,7 @@ import type { Calibration, Measurement, Point, Project, ToolMode, Unit } from '.
 import { REFERENCE_PRESETS } from '../lib/references'
 import { formatLength, lengthMm, mmPerPixel, uid } from '../lib/geometry'
 import { exportProjectPng } from '../lib/export'
-import { MeasureCanvas } from './MeasureCanvas'
+import { MeasureCanvas, type DragTarget } from './MeasureCanvas'
 
 type Props = {
   project: Project
@@ -15,8 +15,10 @@ type Props = {
 export function Workspace({ project, onChange, onReset }: Props) {
   const [mode, setMode] = useState<ToolMode>('calibrate')
   const [pending, setPending] = useState<Point | null>(null)
-  const [presetId, setPresetId] = useState('credit-card-length')
-  const [customMm, setCustomMm] = useState(100)
+  const [presetId, setPresetId] = useState(
+    project.calibration?.presetId ?? 'credit-card-length',
+  )
+  const [customMm, setCustomMm] = useState(project.calibration?.knownLengthMm ?? 100)
   const [exporting, setExporting] = useState(false)
 
   const preset = REFERENCE_PRESETS.find((p) => p.id === presetId) ?? REFERENCE_PRESETS[0]
@@ -31,40 +33,77 @@ export function Workspace({ project, onChange, onReset }: Props) {
     )
   }, [project.calibration])
 
+  const canGoNextFromCalibrate = Boolean(project.calibration)
+
   const hint = useMemo(() => {
     if (mode === 'calibrate') {
-      return pending
-        ? 'Tap the other end of your reference object.'
-        : `Tap one end of: ${preset.label}.`
+      if (!project.calibration && !pending) {
+        return `Tap one end of: ${preset.label}. Then drag the handles to fine-tune.`
+      }
+      if (!project.calibration && pending) {
+        return 'Tap the other end, then drag either handle until it looks right.'
+      }
+      return 'Drag the green handles to adjust. When ready, tap Next.'
     }
     if (!project.calibration) {
-      return 'Calibrate first — tap both ends of a known reference.'
+      return 'Finish calibration first, then tap Next.'
     }
-    return pending ? 'Tap the end of this edge.' : 'Tap to start a measurement edge.'
+    if (mode === 'select') {
+      return 'Drag any handle to nudge a point. Use Measure to add edges.'
+    }
+    return pending
+      ? 'Tap the end of this edge — or drag the open handle.'
+      : 'Tap to start an edge, then drag handles to refine.'
   }, [mode, pending, preset.label, project.calibration])
 
-  function handlePoint(p: Point) {
+  function syncCalibrationPoints(a: Point, b: Point) {
+    const calibration: Calibration = {
+      a,
+      b,
+      knownLengthMm: knownMm,
+      presetId,
+      label: presetId === 'custom' ? `Custom ${knownMm} mm` : preset.label,
+    }
+    onChange({ ...project, calibration })
+  }
+
+  function applyPresetToExisting() {
+    if (!project.calibration) return
+    onChange({
+      ...project,
+      calibration: {
+        ...project.calibration,
+        knownLengthMm: knownMm,
+        presetId,
+        label: presetId === 'custom' ? `Custom ${knownMm} mm` : preset.label,
+      },
+    })
+  }
+
+  function handlePlacePoint(p: Point) {
     if (mode === 'select') return
 
+    if (mode === 'calibrate') {
+      if (!project.calibration && !pending) {
+        setPending(p)
+        return
+      }
+      if (!project.calibration && pending) {
+        syncCalibrationPoints(pending, p)
+        setPending(null)
+        return
+      }
+      // Already have calibration — placing replaces by starting a new pair
+      setPending(p)
+      onChange({ ...project, calibration: null })
+      return
+    }
+
+    // measure mode
     if (!pending) {
       setPending(p)
       return
     }
-
-    if (mode === 'calibrate') {
-      const calibration: Calibration = {
-        a: pending,
-        b: p,
-        knownLengthMm: knownMm,
-        presetId,
-        label: preset.label,
-      }
-      onChange({ ...project, calibration })
-      setPending(null)
-      setMode('measure')
-      return
-    }
-
     const measurement: Measurement = {
       id: uid(),
       a: pending,
@@ -73,6 +112,32 @@ export function Workspace({ project, onChange, onReset }: Props) {
     }
     onChange({ ...project, measurements: [...project.measurements, measurement] })
     setPending(null)
+  }
+
+  function handleMoveHandle(target: DragTarget, p: Point) {
+    if (target.kind === 'pending') {
+      setPending(p)
+      return
+    }
+    if (target.kind === 'calibration' && project.calibration) {
+      const next = {
+        ...project.calibration,
+        [target.end]: p,
+        knownLengthMm: knownMm,
+        presetId,
+        label: presetId === 'custom' ? `Custom ${knownMm} mm` : preset.label,
+      }
+      onChange({ ...project, calibration: next })
+      return
+    }
+    if (target.kind === 'measurement') {
+      onChange({
+        ...project,
+        measurements: project.measurements.map((m) =>
+          m.id === target.id ? { ...m, [target.end]: p } : m,
+        ),
+      })
+    }
   }
 
   function setUnit(unit: Unit) {
@@ -130,7 +195,8 @@ export function Workspace({ project, onChange, onReset }: Props) {
           measurements={project.measurements}
           pending={pending}
           unit={project.unit}
-          onPoint={handlePoint}
+          onPlacePoint={handlePlacePoint}
+          onMoveHandle={handleMoveHandle}
         />
         <div className="hint-chip">{hint}</div>
       </div>
@@ -150,7 +216,9 @@ export function Workspace({ project, onChange, onReset }: Props) {
           <button
             type="button"
             className={mode === 'measure' ? 'active' : ''}
+            disabled={!project.calibration}
             onClick={() => {
+              if (!project.calibration) return
               setMode('measure')
               setPending(null)
             }}
@@ -175,7 +243,27 @@ export function Workspace({ project, onChange, onReset }: Props) {
             <div className="row">
               <select
                 value={presetId}
-                onChange={(e) => setPresetId(e.target.value)}
+                onChange={(e) => {
+                  const nextId = e.target.value
+                  setPresetId(nextId)
+                  const nextPreset =
+                    REFERENCE_PRESETS.find((r) => r.id === nextId) ?? REFERENCE_PRESETS[0]
+                  const nextMm = nextId === 'custom' ? customMm : nextPreset.lengthMm
+                  if (project.calibration) {
+                    onChange({
+                      ...project,
+                      calibration: {
+                        ...project.calibration,
+                        presetId: nextId,
+                        knownLengthMm: nextMm,
+                        label:
+                          nextId === 'custom'
+                            ? `Custom ${nextMm} mm`
+                            : nextPreset.label,
+                      },
+                    })
+                  }
+                }}
                 aria-label="Reference preset"
               >
                 {REFERENCE_PRESETS.map((r) => (
@@ -193,6 +281,7 @@ export function Workspace({ project, onChange, onReset }: Props) {
                   step={0.1}
                   value={customMm}
                   onChange={(e) => setCustomMm(Number(e.target.value))}
+                  onBlur={applyPresetToExisting}
                   aria-label="Custom length in millimetres"
                 />
                 <span>mm</span>
@@ -200,21 +289,35 @@ export function Workspace({ project, onChange, onReset }: Props) {
             )}
             <p className={project.calibration ? 'status-ok' : 'status-warn'}>
               {project.calibration
-                ? `Calibrated · ${project.calibration.label}`
+                ? 'Handles placed — drag to fine-tune, then Next.'
                 : preset.hint}
             </p>
-            {project.calibration && (
+            <div className="row">
+              {project.calibration && (
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-small"
+                  onClick={() => {
+                    onChange({ ...project, calibration: null })
+                    setPending(null)
+                  }}
+                >
+                  Reset points
+                </button>
+              )}
               <button
                 type="button"
-                className="btn btn-secondary btn-small"
+                className="btn btn-primary btn-small"
+                disabled={!canGoNextFromCalibrate}
                 onClick={() => {
-                  onChange({ ...project, calibration: null })
+                  applyPresetToExisting()
                   setPending(null)
+                  setMode('measure')
                 }}
               >
-                Clear calibration
+                Next → Measure
               </button>
-            )}
+            </div>
           </section>
         )}
 
@@ -238,7 +341,7 @@ export function Workspace({ project, onChange, onReset }: Props) {
             <ul className="measure-list">
               {project.measurements.length === 0 && (
                 <li>
-                  <span>No edges yet</span>
+                  <span>No edges yet — tap two points, then drag to adjust</span>
                 </li>
               )}
               {project.measurements.map((m) => (

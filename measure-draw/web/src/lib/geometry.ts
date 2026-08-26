@@ -1,4 +1,4 @@
-import type { Point, Unit } from '../types'
+import type { Point } from '../types'
 
 export function dist(a: Point, b: Point): number {
   const dx = b.x - a.x
@@ -8,6 +8,28 @@ export function dist(a: Point, b: Point): number {
 
 export function midpoint(a: Point, b: Point): Point {
   return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }
+}
+
+/** Hit-test radius in image pixels, scaled to image size for finger-friendly handles. */
+export function handleHitRadius(naturalWidth: number): number {
+  return Math.max(28, naturalWidth * 0.035)
+}
+
+export function nearestHandle(
+  p: Point,
+  candidates: { id: string; point: Point }[],
+  radius: number,
+): string | null {
+  let bestId: string | null = null
+  let bestD = radius
+  for (const c of candidates) {
+    const d = dist(p, c.point)
+    if (d <= bestD) {
+      bestD = d
+      bestId = c.id
+    }
+  }
+  return bestId
 }
 
 /** Millimetres per image pixel, from a calibrated reference segment. */
@@ -26,7 +48,7 @@ export function lengthMm(
   return dist(a, b) * scaleMmPerPx
 }
 
-export function formatLength(mm: number | null, unit: Unit): string {
+export function formatLength(mm: number | null, unit: 'mm' | 'cm' | 'in'): string {
   if (mm == null || !Number.isFinite(mm)) return '—'
   if (unit === 'mm') return `${roundSmart(mm)} mm`
   if (unit === 'cm') return `${roundSmart(mm / 10)} cm`

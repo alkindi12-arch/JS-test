@@ -219,6 +219,11 @@ button {
   max-height: min(62dvh, 720px);
   object-fit: contain;
   cursor: crosshair;
+  touch-action: none;
+}
+
+.canvas-wrap canvas:active {
+  cursor: grabbing;
 }
 
 .hint-chip {

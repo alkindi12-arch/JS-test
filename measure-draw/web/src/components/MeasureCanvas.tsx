@@ -1,7 +1,18 @@
 import { useEffect, useRef } from 'react'
-import type { Calibration, Measurement, Point, ToolMode } from '../types'
-import { formatLength, lengthMm, mmPerPixel, midpoint } from '../lib/geometry'
-import type { Unit } from '../types'
+import type { Calibration, Measurement, Point, ToolMode, Unit } from '../types'
+import {
+  formatLength,
+  handleHitRadius,
+  lengthMm,
+  midpoint,
+  mmPerPixel,
+  nearestHandle,
+} from '../lib/geometry'
+
+export type DragTarget =
+  | { kind: 'calibration'; end: 'a' | 'b' }
+  | { kind: 'measurement'; id: string; end: 'a' | 'b' }
+  | { kind: 'pending' }
 
 type Props = {
   imageUrl: string
@@ -12,7 +23,10 @@ type Props = {
   measurements: Measurement[]
   pending: Point | null
   unit: Unit
-  onPoint: (p: Point) => void
+  /** Place a new point (only when not starting a drag on an existing handle). */
+  onPlacePoint: (p: Point) => void
+  /** Move an existing handle while dragging. */
+  onMoveHandle: (target: DragTarget, p: Point) => void
 }
 
 export function MeasureCanvas({
@@ -24,10 +38,12 @@ export function MeasureCanvas({
   measurements,
   pending,
   unit,
-  onPoint,
+  onPlacePoint,
+  onMoveHandle,
 }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const imgRef = useRef<HTMLImageElement | null>(null)
+  const dragRef = useRef<DragTarget | null>(null)
 
   useEffect(() => {
     const img = new Image()
@@ -68,23 +84,53 @@ export function MeasureCanvas({
         '#1a3530',
         `${formatLength(calibration.knownLengthMm, unit)} ref`,
         true,
+        true,
       )
     }
 
     for (const m of measurements) {
       const mm = lengthMm(m.a, m.b, scale)
-      strokeSeg(ctx, m.a, m.b, '#c45c26', formatLength(mm, unit), false)
+      const emphasize = mode !== 'calibrate'
+      strokeSeg(ctx, m.a, m.b, '#c45c26', formatLength(mm, unit), false, emphasize)
     }
 
     if (pending) {
-      ctx.fillStyle = mode === 'calibrate' ? '#1a3530' : '#c45c26'
-      ctx.beginPath()
-      ctx.arc(pending.x, pending.y, 8, 0, Math.PI * 2)
-      ctx.fill()
-      ctx.strokeStyle = '#fff'
-      ctx.lineWidth = 3
-      ctx.stroke()
+      drawHandle(ctx, pending, mode === 'calibrate' ? '#1a3530' : '#c45c26', true)
     }
+  }
+
+  function collectHandles(): { id: string; point: Point; target: DragTarget }[] {
+    const list: { id: string; point: Point; target: DragTarget }[] = []
+    if (calibration && (mode === 'calibrate' || mode === 'select')) {
+      list.push({
+        id: 'cal-a',
+        point: calibration.a,
+        target: { kind: 'calibration', end: 'a' },
+      })
+      list.push({
+        id: 'cal-b',
+        point: calibration.b,
+        target: { kind: 'calibration', end: 'b' },
+      })
+    }
+    if (mode === 'measure' || mode === 'select') {
+      for (const m of measurements) {
+        list.push({
+          id: `${m.id}-a`,
+          point: m.a,
+          target: { kind: 'measurement', id: m.id, end: 'a' },
+        })
+        list.push({
+          id: `${m.id}-b`,
+          point: m.b,
+          target: { kind: 'measurement', id: m.id, end: 'b' },
+        })
+      }
+    }
+    if (pending) {
+      list.push({ id: 'pending', point: pending, target: { kind: 'pending' } })
+    }
+    return list
   }
 
   function eventToPoint(e: React.PointerEvent<HTMLCanvasElement>): Point {
@@ -92,16 +138,47 @@ export function MeasureCanvas({
     const rect = canvas.getBoundingClientRect()
     const x = ((e.clientX - rect.left) / rect.width) * naturalWidth
     const y = ((e.clientY - rect.top) / rect.height) * naturalHeight
-    return { x, y }
+    return {
+      x: Math.min(naturalWidth, Math.max(0, x)),
+      y: Math.min(naturalHeight, Math.max(0, y)),
+    }
+  }
+
+  function onPointerDown(e: React.PointerEvent<HTMLCanvasElement>) {
+    e.currentTarget.setPointerCapture(e.pointerId)
+    const p = eventToPoint(e)
+    const handles = collectHandles()
+    const hitId = nearestHandle(
+      p,
+      handles.map((h) => ({ id: h.id, point: h.point })),
+      handleHitRadius(naturalWidth),
+    )
+    if (hitId) {
+      const hit = handles.find((h) => h.id === hitId)!
+      dragRef.current = hit.target
+      onMoveHandle(hit.target, p)
+      return
+    }
+    if (mode === 'select') return
+    onPlacePoint(p)
+  }
+
+  function onPointerMove(e: React.PointerEvent<HTMLCanvasElement>) {
+    if (!dragRef.current) return
+    onMoveHandle(dragRef.current, eventToPoint(e))
+  }
+
+  function onPointerUp() {
+    dragRef.current = null
   }
 
   return (
     <canvas
       ref={canvasRef}
-      onPointerDown={(e) => {
-        e.currentTarget.setPointerCapture(e.pointerId)
-        onPoint(eventToPoint(e))
-      }}
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={onPointerUp}
+      onPointerCancel={onPointerUp}
       aria-label="Measurement canvas"
     />
   )
@@ -114,6 +191,7 @@ function strokeSeg(
   color: string,
   label: string,
   dashed: boolean,
+  showHandles: boolean,
 ) {
   ctx.save()
   ctx.strokeStyle = color
@@ -126,15 +204,9 @@ function strokeSeg(
   ctx.stroke()
   ctx.setLineDash([])
 
-  const r = Math.max(6, ctx.canvas.width * 0.004)
-  for (const p of [a, b]) {
-    ctx.beginPath()
-    ctx.arc(p.x, p.y, r, 0, Math.PI * 2)
-    ctx.fill()
-    ctx.strokeStyle = '#fff'
-    ctx.lineWidth = 2
-    ctx.stroke()
-    ctx.strokeStyle = color
+  if (showHandles) {
+    drawHandle(ctx, a, color, false)
+    drawHandle(ctx, b, color, false)
   }
 
   const mid = midpoint(a, b)
@@ -150,6 +222,39 @@ function strokeSeg(
   ctx.fill()
   ctx.fillStyle = color
   ctx.fillText(label, mid.x - tw / 2, mid.y - 10)
+  ctx.restore()
+}
+
+function drawHandle(
+  ctx: CanvasRenderingContext2D,
+  p: Point,
+  color: string,
+  pulse: boolean,
+) {
+  const r = Math.max(10, ctx.canvas.width * 0.008)
+  ctx.save()
+  if (pulse) {
+    ctx.beginPath()
+    ctx.arc(p.x, p.y, r * 2.2, 0, Math.PI * 2)
+    ctx.fillStyle = 'rgba(196, 92, 38, 0.2)'
+    ctx.fill()
+  }
+  ctx.beginPath()
+  ctx.arc(p.x, p.y, r, 0, Math.PI * 2)
+  ctx.fillStyle = color
+  ctx.fill()
+  ctx.strokeStyle = '#fff'
+  ctx.lineWidth = Math.max(3, r * 0.35)
+  ctx.stroke()
+  // Inner crosshair for precision
+  ctx.beginPath()
+  ctx.strokeStyle = '#fff'
+  ctx.lineWidth = 2
+  ctx.moveTo(p.x - r * 0.45, p.y)
+  ctx.lineTo(p.x + r * 0.45, p.y)
+  ctx.moveTo(p.x, p.y - r * 0.45)
+  ctx.lineTo(p.x, p.y + r * 0.45)
+  ctx.stroke()
   ctx.restore()
 }
 
