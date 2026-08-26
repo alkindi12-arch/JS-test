@@ -5,3 +5,5 @@
 web/node_modules/
 web/dist/
 *.log
+web/.netlify/
+web/node_modules/
