@@ -76,6 +76,7 @@ export function MeasureCanvas({
     placed: boolean
   } | null>(null)
   const [, bump] = useState(0)
+  const [dragging, setDragging] = useState(false)
   const requestPaint = () => {
     paint()
     bump((n) => n + 1)
@@ -95,7 +96,7 @@ export function MeasureCanvas({
   useEffect(() => {
     paint()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [calibration, measurements, pending, mode, unit])
+  }, [calibration, measurements, pending, mode, unit, dragging])
 
   useEffect(() => {
     const wrap = wrapRef.current
@@ -300,8 +301,8 @@ export function MeasureCanvas({
     }
     ctx.restore()
 
-    // Loupe in screen space
-    if (dragRef.current && loupePointRef.current) {
+    // Loupe in screen space while dragging a handle
+    if ((dragRef.current || dragging) && loupePointRef.current) {
       drawLoupe(ctx, img, loupePointRef.current, size.w, size.h)
     }
   }
@@ -334,20 +335,23 @@ export function MeasureCanvas({
     viewH: number,
   ) {
     const screen = imageToScreen(imgPt)
-    // Park loupe opposite the finger (usually finger is below aim point)
-    let cx = screen.x
-    let cy = screen.y - LOUPE_RADIUS - 28
-    if (cy < LOUPE_RADIUS + 8) cy = screen.y + LOUPE_RADIUS + 36
-    if (cx < LOUPE_RADIUS + 8) cx = LOUPE_RADIUS + 8
-    if (cx > viewW - LOUPE_RADIUS - 8) cx = viewW - LOUPE_RADIUS - 8
-    if (cy > viewH - LOUPE_RADIUS - 8) cy = viewH - LOUPE_RADIUS - 8
+    let cx = Math.min(viewW - LOUPE_RADIUS - 10, Math.max(LOUPE_RADIUS + 10, screen.x))
+    let cy = screen.y - LOUPE_RADIUS - 36
+    if (cy < LOUPE_RADIUS + 10) cy = screen.y + LOUPE_RADIUS + 40
+    cy = Math.min(viewH - LOUPE_RADIUS - 10, Math.max(LOUPE_RADIUS + 10, cy))
 
     const srcR = LOUPE_RADIUS / LOUPE_ZOOM
+
     ctx.save()
+    ctx.beginPath()
+    ctx.arc(cx, cy, LOUPE_RADIUS + 5, 0, Math.PI * 2)
+    ctx.fillStyle = 'rgba(26,53,48,0.28)'
+    ctx.fill()
+
     ctx.beginPath()
     ctx.arc(cx, cy, LOUPE_RADIUS, 0, Math.PI * 2)
     ctx.clip()
-    ctx.fillStyle = '#111'
+    ctx.fillStyle = '#243f39'
     ctx.fillRect(cx - LOUPE_RADIUS, cy - LOUPE_RADIUS, LOUPE_RADIUS * 2, LOUPE_RADIUS * 2)
     ctx.drawImage(
       img,
@@ -364,26 +368,32 @@ export function MeasureCanvas({
 
     ctx.beginPath()
     ctx.arc(cx, cy, LOUPE_RADIUS, 0, Math.PI * 2)
-    ctx.strokeStyle = 'rgba(255,255,255,0.95)'
-    ctx.lineWidth = 3
+    ctx.strokeStyle = '#ffffff'
+    ctx.lineWidth = 4
     ctx.stroke()
     ctx.strokeStyle = '#c45c26'
-    ctx.lineWidth = 2
+    ctx.lineWidth = 2.5
     ctx.stroke()
 
-    // Crosshair
     ctx.beginPath()
     ctx.strokeStyle = '#c45c26'
-    ctx.lineWidth = 1.5
-    ctx.moveTo(cx - 18, cy)
-    ctx.lineTo(cx + 18, cy)
-    ctx.moveTo(cx, cy - 18)
-    ctx.lineTo(cx, cy + 18)
+    ctx.lineWidth = 1.75
+    ctx.moveTo(cx - 22, cy)
+    ctx.lineTo(cx + 22, cy)
+    ctx.moveTo(cx, cy - 22)
+    ctx.lineTo(cx, cy + 22)
     ctx.stroke()
     ctx.beginPath()
-    ctx.arc(cx, cy, 4, 0, Math.PI * 2)
+    ctx.arc(cx, cy, 3.5, 0, Math.PI * 2)
     ctx.fillStyle = '#c45c26'
     ctx.fill()
+
+    ctx.beginPath()
+    ctx.strokeStyle = 'rgba(196,92,38,0.55)'
+    ctx.lineWidth = 1.5
+    ctx.moveTo(cx, cy + (cy < screen.y ? LOUPE_RADIUS : -LOUPE_RADIUS))
+    ctx.lineTo(screen.x, screen.y)
+    ctx.stroke()
   }
 
   function setZoomAround(nextZoom: number, screenX: number, screenY: number) {
@@ -438,6 +448,7 @@ export function MeasureCanvas({
       const aim = aimPointFromClient(e.clientX, e.clientY, true)
       dragPointRef.current = aim
       loupePointRef.current = aim
+      setDragging(true)
       onMoveHandle(hit, aim)
       paint()
       return
@@ -503,6 +514,7 @@ export function MeasureCanvas({
       dragRef.current = null
       dragPointRef.current = null
       loupePointRef.current = null
+      setDragging(false)
       paint()
     }
 
