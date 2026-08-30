@@ -210,20 +210,44 @@ button {
   box-shadow: var(--shadow);
   touch-action: none;
   min-height: 280px;
+  height: min(62dvh, 720px);
 }
 
-.canvas-wrap canvas {
+.canvas-stage {
+  position: absolute;
+  inset: 0;
+  touch-action: none;
+}
+
+.canvas-stage canvas {
   display: block;
   width: 100%;
-  height: auto;
-  max-height: min(62dvh, 720px);
-  object-fit: contain;
+  height: 100%;
   cursor: crosshair;
   touch-action: none;
 }
 
-.canvas-wrap canvas:active {
+.canvas-stage canvas:active {
   cursor: grabbing;
+}
+
+.zoom-toolbar {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  display: flex;
+  gap: 0.3rem;
+  z-index: 2;
+  padding: 0.25rem;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.82);
+  border: 1px solid var(--line);
+  backdrop-filter: blur(10px);
+}
+
+.zoom-toolbar .btn {
+  min-width: 2.2rem;
+  padding-inline: 0.55rem;
 }
 
 .hint-chip {
@@ -410,10 +434,7 @@ input[type='text'] {
   .canvas-wrap {
     margin: 0;
     min-height: 70dvh;
-  }
-
-  .canvas-wrap canvas {
-    max-height: 75dvh;
+    height: min(75dvh, 820px);
   }
 
   .dock {

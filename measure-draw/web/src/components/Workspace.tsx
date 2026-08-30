@@ -38,22 +38,22 @@ export function Workspace({ project, onChange, onReset }: Props) {
   const hint = useMemo(() => {
     if (mode === 'calibrate') {
       if (!project.calibration && !pending) {
-        return `Tap one end of: ${preset.label}. Then drag the handles to fine-tune.`
+        return `Tap near an end of: ${preset.label}. Pinch to zoom, then drag the handle (loupe helps).`
       }
       if (!project.calibration && pending) {
-        return 'Tap the other end, then drag either handle until it looks right.'
+        return 'Tap the other end. Drag handles — point sits above your finger with a magnifier.'
       }
-      return 'Drag the green handles to adjust. When ready, tap Next.'
+      return 'Pinch/zoom, drag handles with the loupe, then tap Next.'
     }
     if (!project.calibration) {
       return 'Finish calibration first, then tap Next.'
     }
     if (mode === 'select') {
-      return 'Drag any handle to nudge a point. Use Measure to add edges.'
+      return 'Zoom in and drag any handle. Use Measure to add edges.'
     }
     return pending
-      ? 'Tap the end of this edge — or drag the open handle.'
-      : 'Tap to start an edge, then drag handles to refine.'
+      ? 'Tap the end of this edge — or drag the open handle (loupe on).'
+      : 'Tap roughly, then zoom and drag handles to refine.'
   }, [mode, pending, preset.label, project.calibration])
 
   function syncCalibrationPoints(a: Point, b: Point) {

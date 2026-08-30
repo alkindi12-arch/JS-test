@@ -119,24 +119,20 @@ Do **not** require precision on the first tap. Require precision on adjust.
 
 ## Proposed implementation plan (web first)
 
-### Phase A — Zoom + pan foundation
+### Phase A — Zoom + pan foundation — **done (web)**
 **Goal:** User can work at 2–4× on the photo.
 
-- Add view transform: `scale`, `offsetX`, `offsetY`  
-- Pinch zoom, drag pan when not on a handle  
-- Map pointer ↔ image coords through the transform (critical)  
-- UI: Fit | 100% | zoom ±  
+- View transform: `zoom`, `panX`, `panY`
+- Pinch zoom, drag pan when not on a handle
+- Wheel zoom + double-tap toggle (desktop)
+- Fit / ± toolbar
 
-**Exit criteria:** Place/drag points accurately on a zoomed card corner on iPhone Safari.
-
-### Phase B — Loupe + drag offset
+### Phase B — Loupe + drag offset — **done (web)**
 **Goal:** Finger no longer hides the target.
 
-- While dragging: show loupe (e.g. 2.5×–4×) with crosshair  
-- Apply vertical touch offset so point is above fingertip  
-- Loupe parks at top of canvas if near bottom edge  
-
-**Exit criteria:** Users can align to a credit-card corner without “guessing under the finger.”
+- Loupe while dragging handles
+- Vertical touch offset so aim point sits above fingertip
+- Screen-space hit targets for handles
 
 ### Phase C — Select + nudge
 **Goal:** Final 1–2 px corrections without fighting touch jitter.

@@ -97,11 +97,11 @@ export function Home({ onImage }: Props) {
 
       <div className="feature-strip">
         <p>
-          <strong>1. Calibrate</strong> — tap both ends of a card or ruler, then drag the handles
-          until they sit correctly. Tap Next when ready.
+          <strong>1. Calibrate</strong> — tap near both ends of a card or ruler, pinch to zoom,
+          then drag handles (magnifier + point above your finger). Tap Next when ready.
         </p>
         <p>
-          <strong>2. Measure</strong> — tap edges of the object; drag handles to refine. The
+          <strong>2. Measure</strong> — tap edges of the object; zoom and drag to refine. The
           drawing builds as you go.
         </p>
         <p>
