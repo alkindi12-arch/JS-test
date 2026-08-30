@@ -31,9 +31,16 @@ Answer these before writing production code.
 
 14. Keep **Measure Draw** or prefer another name from the brainstorm list?
 
+## Point placement UX
+
+15. Primary refine method: **loupe+offset**, **center reticle**, or both?
+16. Snap-to-edge default on or off?
+See [precise-point-placement.md](precise-point-placement.md).
+
 ## Next workshop agenda
 
 - [ ] Walk through [competitive-landscape.md](competitive-landscape.md) and mark “love / ignore”
 - [ ] Vote MVP-1 / MVP-2 / MVP-3 in [mvp-options.md](mvp-options.md)
+- [ ] Confirm point-placement plan (Phase A–C) in [precise-point-placement.md](precise-point-placement.md)
 - [ ] List 5 must-have screens
 - [ ] Only then open a `spike/` folder for prototypes

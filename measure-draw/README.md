@@ -42,3 +42,4 @@ Then open the URL on your phone (same Wi‑Fi → use Vite’s Network address),
 - [docs/mvp-options.md](docs/mvp-options.md)  
 - [docs/competitive-landscape.md](docs/competitive-landscape.md)  
 - [docs/lidar-live-measure.md](docs/lidar-live-measure.md) — Live LiDAR edges / auto-measure plan  
+- [docs/precise-point-placement.md](docs/precise-point-placement.md) — Plan to make point placement accurate on phones  
