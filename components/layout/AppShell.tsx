@@ -36,7 +36,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const nav = (
     <>
       <div className={styles.brandBlock}>
-        <Link href="/dashboard" className={styles.brand}>
+        <Link href="/lineage/dashboard" className={styles.brand}>
           <span className={styles.brandMark} aria-hidden />
           <span className={styles.brandText}>
             <span className={styles.brandName}>Lineage</span>
@@ -60,6 +60,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       </nav>
 
       <div className={styles.navFooter}>
+        <Link href="/" className={styles.navItem}>
+          <Icon name="areas" />
+          <span className={styles.navLabel}>All apps</span>
+        </Link>
         {adminNav.map((item) => (
           <Link
             key={item.href}

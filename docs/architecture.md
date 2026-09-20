@@ -5,39 +5,42 @@
 1. **Expandable design system** — tokens first; UI primitives; domain components compose primitives.
 2. **Scalable structure** — route groups, typed domain contracts, mock → API swap without UI rewrites.
 3. **Cross-platform viewing** — mobile-first CSS, responsive shell for phone / tablet / desktop / wide Windows displays.
+4. **Hostinger multi-app domain** — one Node deploy; portal at `/`; products under `/lineage`, etc.; MySQL (not Postgres).
 
 ## Folder map
 
 ```
 app/
+  page.tsx                   # App Hub portal (multi-app launcher)
   layout.tsx                 # fonts, metadata, global atmosphere
-  page.tsx                   # redirects → /dashboard
-  globals.css                # imports tokens + motion
-  (platform)/                # authenticated product shell
-    layout.tsx               # AppShell
-    dashboard/
-    areas/
-    units/
-    equipment/
-    activities/
-    reports/
-    admin/
-  api/                       # existing health endpoints retained
+  lineage/
+    page.tsx                 # redirects → /lineage/dashboard
+    (platform)/              # Lineage AppShell + screens
+  api/                       # health / ping (Hostinger smoke checks)
 
 components/
-  design-system/             # Button, Badge, Grid, Text, Surface, …
-  layout/                    # AppShell, PageHeader
-  domain/                    # ActivityRow, EquipmentListItem (feature UI)
+  design-system/
+  layout/
+  domain/
 
 lib/
-  types/domain.ts            # stable domain contracts
-  mock/plant.ts              # seed data (replace with API clients)
-  navigation.ts
-  format.ts
+  apps/registry.ts           # hosted apps list for the portal
+  lineage/paths.ts           # /lineage URL helper
+  db/mysql.ts                # Hostinger MySQL pool (mysql2)
+  types/domain.ts
+  mock/plant.ts
+
+db/
+  schema.mysql.sql           # import in Hostinger phpMyAdmin
 
 styles/
-  tokens.css                 # single source of truth for visual language
+  tokens.css
   motion.css
+
+docs/
+  hostinger-deploy.md
+  architecture.md
+  equipment-history-system-plan.md
 ```
 
 ## Design system layers

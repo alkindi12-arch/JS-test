@@ -27,7 +27,7 @@ function severityTone(severity: Severity) {
 
 export function ActivityRow({ activity, tag }: { activity: Activity; tag?: string }) {
   return (
-    <Link href={`/activities/${activity.id}`} className={styles.row}>
+    <Link href={`/lineage/activities/${activity.id}`} className={styles.row}>
       <div className={styles.main}>
         <Stack direction="horizontal" gap={2} wrap>
           <Text mono size="xs" tone="mute">

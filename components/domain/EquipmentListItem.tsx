@@ -19,7 +19,7 @@ function statusTone(status: EquipmentStatus) {
 
 export function EquipmentListItem({ item }: { item: Equipment }) {
   return (
-    <Link href={`/equipment/${item.id}`} className={styles.item}>
+    <Link href={`/lineage/equipment/${item.id}`} className={styles.item}>
       <Stack gap={2}>
         <Stack direction="horizontal" gap={2} wrap align="center">
           <Text mono weight="bold" size="md">

@@ -464,13 +464,13 @@ flowchart LR
 |-------|----------------|-------------|
 | Frontend | React (Next.js) or Flutter | — |
 | Backend | Node.js or FastAPI | — |
-| Database | PostgreSQL | SQL Server |
+| Database | **MySQL / MariaDB (Hostinger)** | PostgreSQL only if self-hosted elsewhere |
 | Files | AWS S3 / Azure Blob | Local for MVP demo |
 | Auth | Azure AD (plant SSO) | Google / custom JWT |
 | Reports | Server-side PDF (e.g. Puppeteer / WeasyPrint) | — |
 | Analytics | Built-in charts → Power BI later | — |
 
-**MVP stack suggestion (web-first):** Next.js + PostgreSQL + S3-compatible storage + Azure AD.
+**MVP stack suggestion (Hostinger):** Next.js (multi-app portal on one domain) + Hostinger MySQL + object storage later + Azure AD / custom auth.
 
 ---
 

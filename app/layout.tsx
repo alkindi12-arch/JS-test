@@ -18,12 +18,12 @@ const figtree = Figtree({
 
 export const metadata: Metadata = {
   title: {
-    default: 'Lineage — Equipment History',
-    template: '%s · Lineage',
+    default: 'App Hub',
+    template: '%s · App Hub',
   },
   description:
-    'Equipment history and activity tracking across Area → Unit → Equipment → Activities.',
-  applicationName: 'Lineage',
+    'Multi-app portal on Hostinger — Lineage equipment history and future tools on one domain.',
+  applicationName: 'App Hub',
 };
 
 export const viewport: Viewport = {
