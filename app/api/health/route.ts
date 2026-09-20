@@ -9,7 +9,7 @@ export async function GET() {
     ok: true,
     source: 'next-api-route',
     time: new Date().toISOString(),
-    portal: process.env.NEXT_PUBLIC_PORTAL_NAME ?? 'App Hub',
+    portal: process.env.NEXT_PUBLIC_PORTAL_NAME ?? 'Alkinda',
     database: {
       configured: dbConfigured,
       status: db.message,

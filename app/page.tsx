@@ -20,8 +20,8 @@ export default function PortalHomePage() {
           {portalConfig.name}
         </Text>
         <Text tone="mute" size="lg" className={styles.lede}>
-          One Hostinger domain. Multiple apps. Open Lineage or add the next tool without
-          redeploying a separate site.
+          Personal app platform on Hostinger. Lineage is the first app — more can land here
+          under the same domain without a new site each time.
         </Text>
       </header>
 
@@ -30,58 +30,48 @@ export default function PortalHomePage() {
           <Text as="h2" display size="xl">
             Applications
           </Text>
-          <Grid columns={3} gap={4}>
-            {hostedApps.map((app) => {
-              const card = (
-                <Surface
-                  key={app.id}
-                  pad={5}
-                  href={app.status === 'planned' ? undefined : app.href}
-                  className={styles.appCard}
-                >
-                  <Stack gap={3}>
-                    <div
-                      className={styles.accentBar}
-                      style={{ background: app.accent }}
-                      aria-hidden
-                    />
-                    <Stack direction="horizontal" justify="between" align="center" wrap gap={2}>
-                      <Text as="h3" display size="lg">
-                        {app.name}
-                      </Text>
-                      <Badge tone={statusTone(app.status)}>{app.status}</Badge>
-                    </Stack>
-                    <Text size="sm" tone="mute">
-                      {app.tagline}
+          <Grid columns={hostedApps.length === 1 ? 1 : 2} gap={4}>
+            {hostedApps.map((app) => (
+              <Surface
+                key={app.id}
+                pad={5}
+                href={app.status === 'planned' ? undefined : app.href}
+                className={styles.appCard}
+              >
+                <Stack gap={3}>
+                  <div
+                    className={styles.accentBar}
+                    style={{ background: app.accent }}
+                    aria-hidden
+                  />
+                  <Stack direction="horizontal" justify="between" align="center" wrap gap={2}>
+                    <Text as="h3" display size="lg">
+                      {app.name}
                     </Text>
-                    {app.status !== 'planned' ? (
-                      <Text size="sm" weight="semibold" tone="accent">
-                        Open app →
-                      </Text>
-                    ) : (
-                      <Text size="sm" tone="faint">
-                        Coming soon
-                      </Text>
-                    )}
+                    <Badge tone={statusTone(app.status)}>{app.status}</Badge>
                   </Stack>
-                </Surface>
-              );
-
-              return app.status === 'planned' ? (
-                <div key={app.id} className={styles.planned}>
-                  {card}
-                </div>
-              ) : (
-                card
-              );
-            })}
+                  <Text size="sm" tone="mute">
+                    {app.tagline}
+                  </Text>
+                  {app.status !== 'planned' ? (
+                    <Text size="sm" weight="semibold" tone="accent">
+                      Open app →
+                    </Text>
+                  ) : (
+                    <Text size="sm" tone="faint">
+                      Coming soon
+                    </Text>
+                  )}
+                </Stack>
+              </Surface>
+            ))}
           </Grid>
         </Stack>
       </section>
 
       <footer className={`${styles.footer} animate-fade-in stagger-3`}>
         <Text size="sm" tone="mute">
-          Hosted on Hostinger Node.js · MySQL ready ·{' '}
+          alkinda.com · Hostinger Node.js · MySQL ·{' '}
           <Link href="/api/health" className={styles.health}>
             Health check
           </Link>

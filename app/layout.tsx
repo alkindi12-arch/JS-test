@@ -18,12 +18,12 @@ const figtree = Figtree({
 
 export const metadata: Metadata = {
   title: {
-    default: 'App Hub',
-    template: '%s · App Hub',
+    default: 'Alkinda',
+    template: '%s · Alkinda',
   },
   description:
-    'Multi-app portal on Hostinger — Lineage equipment history and future tools on one domain.',
-  applicationName: 'App Hub',
+    'Personal app platform on alkinda.com — Lineage equipment history and future tools.',
+  applicationName: 'Alkinda',
 };
 
 export const viewport: Viewport = {

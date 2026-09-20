@@ -24,6 +24,7 @@
   position: relative;
   overflow: hidden;
   height: 100%;
+  max-width: 28rem;
 }
 
 .accentBar {
@@ -32,10 +33,6 @@
   left: 0;
   right: 0;
   height: 3px;
-}
-
-.planned {
-  opacity: 0.72;
 }
 
 .footer {
