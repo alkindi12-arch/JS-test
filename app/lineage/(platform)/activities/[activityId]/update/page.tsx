@@ -2,6 +2,7 @@ import { notFound } from 'next/navigation';
 import { Button, Stack, Surface, Text } from '@/components/design-system';
 import { ActionForm } from '@/components/domain/ActionForm';
 import { PageHeader } from '@/components/layout/PageHeader';
+import { getSession } from '@/lib/auth/session';
 import { getActivity } from '@/lib/data/plant';
 import { addDailyUpdateAction } from '@/lib/data/plant-writes';
 import styles from './page.module.css';
@@ -12,7 +13,10 @@ export default async function AddUpdatePage({
   params: Promise<{ activityId: string }>;
 }) {
   const { activityId } = await params;
-  const activity = await getActivity(activityId);
+  const [activity, session] = await Promise.all([
+    getActivity(activityId),
+    getSession(),
+  ]);
   if (!activity) notFound();
 
   return (
@@ -34,10 +38,14 @@ export default async function AddUpdatePage({
           className={styles.fields}
         >
           <input type="hidden" name="activityId" value={activityId} />
-          <label className={styles.field}>
-            <span>Author</span>
-            <input name="author" defaultValue="Technician" />
-          </label>
+          {session ? (
+            <input type="hidden" name="author" value={session.name} />
+          ) : (
+            <label className={styles.field}>
+              <span>Author</span>
+              <input name="author" defaultValue="Technician" />
+            </label>
+          )}
           <label className={styles.field}>
             <span>Progress notes</span>
             <textarea name="notes" rows={4} required placeholder="What was done this shift?" />
@@ -46,14 +54,20 @@ export default async function AddUpdatePage({
             <span>Findings</span>
             <textarea name="findings" rows={3} placeholder="Observations, measurements…" />
           </label>
-          <label className={styles.field}>
-            <span>Equipment condition</span>
-            <select name="condition" defaultValue="unchanged">
-              <option value="improved">Improved</option>
-              <option value="unchanged">Unchanged</option>
-              <option value="worsened">Worsened</option>
-            </select>
-          </label>
+          <div className={styles.row}>
+            <label className={styles.field}>
+              <span>Equipment condition</span>
+              <select name="condition" defaultValue="unchanged">
+                <option value="improved">Improved</option>
+                <option value="unchanged">Unchanged</option>
+                <option value="worsened">Worsened</option>
+              </select>
+            </label>
+            <label className={styles.field}>
+              <span>Progress %</span>
+              <input name="progressPct" type="number" min={0} max={100} placeholder="e.g. 40" />
+            </label>
+          </div>
           <label className={styles.field}>
             <span>Also set status</span>
             <select name="setStatus" defaultValue="">

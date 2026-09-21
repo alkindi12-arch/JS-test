@@ -3,14 +3,10 @@
 import { randomBytes } from 'crypto';
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
+import { getSession } from '@/lib/auth/session';
 import { isDatabaseConfigured, getPool } from '@/lib/db/mysql';
 import { lineagePath } from '@/lib/lineage/paths';
-import type {
-  ActivityStatus,
-  ActivityType,
-  Discipline,
-  Severity,
-} from '@/lib/types/domain';
+import type { ActivityStatus, ActivityType, Discipline, Priority } from '@/lib/types/domain';
 
 export type ActionState = {
   ok: boolean;
@@ -39,9 +35,20 @@ function newUpdateId(activityId: string): string {
 }
 
 const TYPES = new Set(['breakdown', 'pm', 'inspection', 'routine', 'project']);
-const SEVERITIES = new Set(['low', 'medium', 'high', 'emergency']);
-const TEAMS = new Set(['rotating', 'electrical', 'instrument', 'static', 'ops', 'vendor']);
+const PRIORITIES = new Set(['low', 'medium', 'high', 'emergency']);
 const CONDITIONS = new Set(['improved', 'unchanged', 'worsened']);
+
+async function resolveTeam(teamIdRaw: string): Promise<{ id: number; discipline: Discipline } | null> {
+  const teamId = Number(teamIdRaw);
+  if (!teamId) return null;
+  const [rows] = await getPool().query(
+    `SELECT id, discipline FROM teams WHERE id = :id LIMIT 1`,
+    { id: teamId },
+  );
+  const row = (rows as Array<{ id: number; discipline: string }>)[0];
+  if (!row) return null;
+  return { id: Number(row.id), discipline: row.discipline as Discipline };
+}
 
 export async function createActivityAction(
   _prev: ActionState,
@@ -50,19 +57,22 @@ export async function createActivityAction(
   const blocked = requireDb();
   if (blocked) return blocked;
 
+  const session = await getSession();
   const title = str(form, 'title');
   const equipmentId = str(form, 'equipmentId');
   const type = str(form, 'type');
-  const severity = str(form, 'severity');
-  const team = str(form, 'team');
+  const priority = str(form, 'priority');
+  const teamIdRaw = str(form, 'teamId');
   const description = str(form, 'description');
-  const author = str(form, 'author') || 'Operator';
+  const authorFallback = str(form, 'author') || session?.name || 'Operator';
 
   if (!title) return { ok: false, error: 'Title is required.' };
   if (!equipmentId) return { ok: false, error: 'Equipment is required.' };
   if (!TYPES.has(type)) return { ok: false, error: 'Invalid activity type.' };
-  if (!SEVERITIES.has(severity)) return { ok: false, error: 'Invalid severity.' };
-  if (!TEAMS.has(team)) return { ok: false, error: 'Invalid team.' };
+  if (!PRIORITIES.has(priority)) return { ok: false, error: 'Invalid priority.' };
+
+  const team = await resolveTeam(teamIdRaw);
+  if (!team) return { ok: false, error: 'Assigned team is required.' };
 
   const pool = getPool();
   const [eqRows] = await pool.query(
@@ -79,11 +89,11 @@ export async function createActivityAction(
   await pool.query(
     `
     INSERT INTO activities (
-      id, equipment_id, title, activity_type, severity, status, assigned_team,
-      start_date, created_by
+      id, equipment_id, title, activity_type, priority, status,
+      assigned_team, assigned_team_id, start_date, created_by, opened_by_user_id
     ) VALUES (
-      :id, :equipmentId, :title, :type, :severity, 'open', :team,
-      :startDate, :author
+      :id, :equipmentId, :title, :type, :priority, 'open',
+      :teamDiscipline, :teamId, :startDate, :author, :openedBy
     )
     `,
     {
@@ -91,10 +101,12 @@ export async function createActivityAction(
       equipmentId,
       title,
       type: type as ActivityType,
-      severity: severity as Severity,
-      team: team as Discipline,
+      priority: priority as Priority,
+      teamDiscipline: team.discipline,
+      teamId: team.id,
       startDate,
-      author,
+      author: authorFallback,
+      openedBy: session?.id ?? null,
     },
   );
 
@@ -102,16 +114,19 @@ export async function createActivityAction(
     await pool.query(
       `
       INSERT INTO daily_updates (
-        id, activity_id, update_date, author, progress_notes, findings, condition_check
+        id, activity_id, update_date, author, updated_by_user_id,
+        progress_notes, findings, condition_check, progress_pct
       ) VALUES (
-        :id, :activityId, :updateDate, :author, :notes, NULL, 'unchanged'
+        :id, :activityId, :updateDate, :author, :userId,
+        :notes, NULL, 'unchanged', NULL
       )
       `,
       {
         id: newUpdateId(id),
         activityId: id,
         updateDate: startDate,
-        author,
+        author: authorFallback,
+        userId: session?.id ?? null,
         notes: description,
       },
     );
@@ -131,16 +146,22 @@ export async function addDailyUpdateAction(
   const blocked = requireDb();
   if (blocked) return blocked;
 
+  const session = await getSession();
   const activityId = str(form, 'activityId');
   const notes = str(form, 'notes');
   const findings = str(form, 'findings');
   const condition = str(form, 'condition') || 'unchanged';
-  const author = str(form, 'author') || 'Technician';
+  const authorFallback = str(form, 'author') || session?.name || 'Technician';
   const setStatus = str(form, 'setStatus');
+  const progressRaw = str(form, 'progressPct');
+  const progressPct = progressRaw === '' ? null : Number(progressRaw);
 
   if (!activityId) return { ok: false, error: 'Activity id missing.' };
   if (!notes) return { ok: false, error: 'Progress notes are required.' };
   if (!CONDITIONS.has(condition)) return { ok: false, error: 'Invalid condition.' };
+  if (progressPct != null && (Number.isNaN(progressPct) || progressPct < 0 || progressPct > 100)) {
+    return { ok: false, error: 'Progress must be 0–100.' };
+  }
 
   const pool = getPool();
   const [actRows] = await pool.query(
@@ -154,19 +175,23 @@ export async function addDailyUpdateAction(
   await pool.query(
     `
     INSERT INTO daily_updates (
-      id, activity_id, update_date, author, progress_notes, findings, condition_check
+      id, activity_id, update_date, author, updated_by_user_id,
+      progress_notes, findings, condition_check, progress_pct
     ) VALUES (
-      :id, :activityId, :updateDate, :author, :notes, :findings, :condition
+      :id, :activityId, :updateDate, :author, :userId,
+      :notes, :findings, :condition, :progressPct
     )
     `,
     {
       id: newUpdateId(activityId),
       activityId,
       updateDate,
-      author,
+      author: authorFallback,
+      userId: session?.id ?? null,
       notes,
       findings: findings || null,
       condition,
+      progressPct,
     },
   );
 
@@ -211,6 +236,7 @@ export async function markActivityCompletedAction(activityId: string): Promise<A
   if (blocked) return blocked;
   if (!activityId) return { ok: false, error: 'Activity id missing.' };
 
+  const session = await getSession();
   const pool = getPool();
   const [actRows] = await pool.query(
     `SELECT id, equipment_id, status FROM activities WHERE id = :id LIMIT 1`,
@@ -235,16 +261,19 @@ export async function markActivityCompletedAction(activityId: string): Promise<A
   await pool.query(
     `
     INSERT INTO daily_updates (
-      id, activity_id, update_date, author, progress_notes, findings, condition_check
+      id, activity_id, update_date, author, updated_by_user_id,
+      progress_notes, findings, condition_check, progress_pct
     ) VALUES (
-      :id, :activityId, :updateDate, :author, :notes, NULL, 'improved'
+      :id, :activityId, :updateDate, :author, :userId,
+      :notes, NULL, 'improved', 100
     )
     `,
     {
       id: newUpdateId(activityId),
       activityId,
       updateDate: endDate,
-      author: 'Supervisor',
+      author: session?.name ?? 'Supervisor',
+      userId: session?.id ?? null,
       notes: 'Marked completed.',
     },
   );

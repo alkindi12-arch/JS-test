@@ -2,7 +2,7 @@
 -- Safe to re-run (INSERT IGNORE)
 
 INSERT IGNORE INTO activities (
-  id, equipment_id, title, activity_type, severity, status, assigned_team,
+  id, equipment_id, title, activity_type, priority, status, assigned_team,
   start_date, created_by
 ) VALUES
   ('ACT-1042', 'EQ-120P-001A', 'Pump vibration high — drive end', 'breakdown', 'high', 'in_progress', 'rotating', '2026-09-18', 'system'),

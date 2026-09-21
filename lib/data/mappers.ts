@@ -8,7 +8,7 @@ import type {
   Discipline,
   Equipment,
   EquipmentStatus,
-  Severity,
+  Priority,
   Unit,
   UnitType,
 } from '@/lib/types/domain';
@@ -60,32 +60,38 @@ export function mapActivity(row: Record<string, unknown>): Activity {
   const startDate = asDateString(row.start_date);
   const delayedFlag = Number(row.is_delayed ?? 0) === 1;
   const waiting = status === 'waiting_parts';
+  const priorityRaw = row.priority ?? row.severity;
 
   return {
     id: String(row.id),
     equipmentId: String(row.equipment_id),
     title: String(row.title),
     type: String(row.activity_type) as ActivityType,
-    severity: String(row.severity) as Severity,
+    priority: String(priorityRaw) as Priority,
     status,
-    team: String(row.assigned_team) as Discipline,
+    team: String(row.team_discipline ?? row.assigned_team) as Discipline,
+    teamId: row.assigned_team_id == null ? null : Number(row.assigned_team_id),
     startDate,
     lastUpdate,
     delayed: delayedFlag || waiting,
+    openedByUserId: row.opened_by_user_id == null ? null : Number(row.opened_by_user_id),
   };
 }
 
 export function mapDailyUpdate(row: Record<string, unknown>): DailyUpdate {
   const date = asDateString(row.update_date);
-  const created = row.created_at instanceof Date
-    ? row.created_at.toISOString().slice(11, 16)
-    : '';
+  const created =
+    row.created_at instanceof Date ? row.created_at.toISOString().slice(11, 16) : '';
+  const author =
+    (row.user_name ? String(row.user_name) : null) ||
+    (row.author ? String(row.author) : 'Unknown');
   return {
     id: String(row.id),
     activityId: String(row.activity_id),
     date: created ? `${date} · ${created}` : date,
-    author: String(row.author),
+    author,
     notes: String(row.progress_notes),
+    progressPct: row.progress_pct == null ? null : Number(row.progress_pct),
   };
 }
 

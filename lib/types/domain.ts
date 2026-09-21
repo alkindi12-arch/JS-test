@@ -3,7 +3,8 @@
 export type Criticality = 'low' | 'medium' | 'high';
 export type EquipmentStatus = 'running' | 'standby' | 'offline' | 'maintenance';
 export type ActivityType = 'breakdown' | 'pm' | 'inspection' | 'routine' | 'project';
-export type Severity = 'low' | 'medium' | 'high' | 'emergency';
+/** Aligns with ERD "priority" (formerly severity in MVP). */
+export type Priority = 'low' | 'medium' | 'high' | 'emergency';
 export type ActivityStatus =
   | 'open'
   | 'in_progress'
@@ -53,12 +54,14 @@ export interface Activity {
   equipmentId: string;
   title: string;
   type: ActivityType;
-  severity: Severity;
+  priority: Priority;
   status: ActivityStatus;
   team: Discipline;
+  teamId?: number | null;
   startDate: string;
   lastUpdate: string;
   delayed?: boolean;
+  openedByUserId?: number | null;
 }
 
 export interface DailyUpdate {
@@ -67,6 +70,7 @@ export interface DailyUpdate {
   date: string;
   author: string;
   notes: string;
+  progressPct?: number | null;
 }
 
 export interface NavItem {

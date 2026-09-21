@@ -15,7 +15,7 @@ export default async function ActivitiesPage() {
       <PageHeader
         eyebrow="Work stream"
         title="Activities"
-        description="Cross-hierarchy list with status, severity, and discipline."
+        description="Cross-hierarchy list with status, priority, and discipline."
         breadcrumbs={[
           { label: 'Dashboard', href: '/lineage/dashboard' },
           { label: 'Activities' },

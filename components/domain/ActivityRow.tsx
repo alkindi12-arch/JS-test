@@ -1,6 +1,6 @@
 import { Badge, Stack, Text } from '@/components/design-system';
 import { labelActivityStatus, labelActivityType } from '@/lib/format';
-import type { Activity, ActivityStatus, Severity } from '@/lib/types/domain';
+import type { Activity, ActivityStatus, Priority } from '@/lib/types/domain';
 import styles from './ActivityRow.module.css';
 import Link from 'next/link';
 
@@ -19,9 +19,9 @@ function statusTone(status: ActivityStatus) {
   }
 }
 
-function severityTone(severity: Severity) {
-  if (severity === 'emergency' || severity === 'high') return 'danger' as const;
-  if (severity === 'medium') return 'signal' as const;
+function priorityTone(priority: Priority) {
+  if (priority === 'emergency' || priority === 'high') return 'danger' as const;
+  if (priority === 'medium') return 'signal' as const;
   return 'neutral' as const;
 }
 
@@ -52,7 +52,7 @@ export function ActivityRow({ activity, tag }: { activity: Activity; tag?: strin
         </Text>
       </div>
       <div className={styles.meta}>
-        <Badge tone={severityTone(activity.severity)}>{activity.severity}</Badge>
+        <Badge tone={priorityTone(activity.priority)}>{activity.priority}</Badge>
         <Badge tone={statusTone(activity.status)} dot>
           {labelActivityStatus(activity.status)}
         </Badge>

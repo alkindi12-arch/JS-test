@@ -5,11 +5,24 @@ import { usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { Icon } from '@/components/design-system/Icon';
 import { Text } from '@/components/design-system/Text';
+import { logoutAction } from '@/lib/auth/actions';
 import { adminNav, primaryNav } from '@/lib/navigation';
 import { cx } from '@/lib/format';
 import styles from './AppShell.module.css';
 
-export function AppShell({ children }: { children: React.ReactNode }) {
+export type ShellUser = {
+  name: string;
+  role: string;
+  initials: string;
+};
+
+export function AppShell({
+  children,
+  user,
+}: {
+  children: React.ReactNode;
+  user?: ShellUser | null;
+}) {
   const pathname = usePathname();
   const [mobileOpen, setMobileOpen] = useState(false);
 
@@ -32,6 +45,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   const isActive = (href: string) =>
     pathname === href || pathname.startsWith(`${href}/`);
+
+  const display = user ?? {
+    name: 'Guest',
+    role: 'Signed out',
+    initials: '?',
+  };
 
   const nav = (
     <>
@@ -76,17 +95,25 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         ))}
         <div className={styles.userChip}>
           <span className={styles.avatar} aria-hidden>
-            SK
+            {display.initials}
           </span>
           <div className={styles.userMeta}>
             <Text size="sm" weight="semibold" tone="inverse">
-              Superv. Khan
+              {display.name}
             </Text>
             <Text size="xs" className={styles.userRole}>
-              Area A01
+              {display.role}
             </Text>
           </div>
         </div>
+        {user ? (
+          <form action={logoutAction}>
+            <button type="submit" className={styles.navItem} style={{ width: '100%', border: 0, background: 'transparent', cursor: 'pointer' }}>
+              <Icon name="close" />
+              <span className={styles.navLabel}>Sign out</span>
+            </button>
+          </form>
+        ) : null}
       </div>
     </>
   );

@@ -1,8 +1,48 @@
--- Lineage schema for Hostinger MySQL / MariaDB
--- Run in hPanel → Databases → phpMyAdmin (or mysql CLI) after creating the database.
+-- Lineage canonical schema (Hostinger MySQL) — ERD-aligned Phase A
+-- Plant codes kept as VARCHAR PKs (A01, CDU, EQ-…). Org tables use INT PKs.
+-- severity renamed to priority per product decision.
 
 SET NAMES utf8mb4;
 SET time_zone = '+00:00';
+
+CREATE TABLE IF NOT EXISTS roles (
+  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  name VARCHAR(64) NOT NULL,
+  permissions_json JSON NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_roles_name (name)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS teams (
+  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  name VARCHAR(64) NOT NULL,
+  discipline VARCHAR(64) NOT NULL,
+  manager_user_id INT UNSIGNED NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_teams_name (name)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS users (
+  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  name VARCHAR(120) NOT NULL,
+  email VARCHAR(190) NOT NULL,
+  phone VARCHAR(40) NULL,
+  password_hash VARCHAR(255) NOT NULL,
+  team_id INT UNSIGNED NULL,
+  role_id INT UNSIGNED NOT NULL,
+  is_active TINYINT(1) NOT NULL DEFAULT 1,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_users_email (email),
+  CONSTRAINT fk_users_role FOREIGN KEY (role_id) REFERENCES roles (id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  CONSTRAINT fk_users_team FOREIGN KEY (team_id) REFERENCES teams (id)
+    ON UPDATE CASCADE ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+ALTER TABLE teams
+  ADD CONSTRAINT fk_teams_manager FOREIGN KEY (manager_user_id) REFERENCES users (id)
+    ON UPDATE CASCADE ON DELETE SET NULL;
 
 CREATE TABLE IF NOT EXISTS areas (
   id VARCHAR(32) PRIMARY KEY,
@@ -49,9 +89,10 @@ CREATE TABLE IF NOT EXISTS activities (
   equipment_id VARCHAR(64) NOT NULL,
   title VARCHAR(255) NOT NULL,
   activity_type ENUM('breakdown', 'pm', 'inspection', 'routine', 'project') NOT NULL,
-  severity ENUM('low', 'medium', 'high', 'emergency') NOT NULL DEFAULT 'medium',
+  priority ENUM('low', 'medium', 'high', 'emergency') NOT NULL DEFAULT 'medium',
   status ENUM('open', 'in_progress', 'waiting_parts', 'completed', 'closed') NOT NULL DEFAULT 'open',
   assigned_team ENUM('rotating', 'electrical', 'instrument', 'static', 'ops', 'vendor') NOT NULL,
+  assigned_team_id INT UNSIGNED NULL,
   start_date DATE NOT NULL,
   end_date DATE NULL,
   closing_notes TEXT NULL,
@@ -59,10 +100,15 @@ CREATE TABLE IF NOT EXISTS activities (
   corrective_action TEXT NULL,
   duration_hours DECIMAL(10, 2) NULL,
   created_by VARCHAR(120) NULL,
+  opened_by_user_id INT UNSIGNED NULL,
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   CONSTRAINT fk_activities_equipment FOREIGN KEY (equipment_id) REFERENCES equipment (id)
     ON UPDATE CASCADE ON DELETE RESTRICT,
+  CONSTRAINT fk_activities_team FOREIGN KEY (assigned_team_id) REFERENCES teams (id)
+    ON UPDATE CASCADE ON DELETE SET NULL,
+  CONSTRAINT fk_activities_opened_by FOREIGN KEY (opened_by_user_id) REFERENCES users (id)
+    ON UPDATE CASCADE ON DELETE SET NULL,
   KEY idx_activities_status (status),
   KEY idx_activities_equipment (equipment_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -72,12 +118,16 @@ CREATE TABLE IF NOT EXISTS daily_updates (
   activity_id VARCHAR(64) NOT NULL,
   update_date DATE NOT NULL,
   author VARCHAR(120) NOT NULL,
+  updated_by_user_id INT UNSIGNED NULL,
   progress_notes TEXT NOT NULL,
   findings TEXT NULL,
   condition_check VARCHAR(64) NULL,
+  progress_pct TINYINT UNSIGNED NULL,
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT fk_updates_activity FOREIGN KEY (activity_id) REFERENCES activities (id)
     ON UPDATE CASCADE ON DELETE CASCADE,
+  CONSTRAINT fk_updates_user FOREIGN KEY (updated_by_user_id) REFERENCES users (id)
+    ON UPDATE CASCADE ON DELETE SET NULL,
   KEY idx_updates_activity (activity_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
@@ -87,30 +137,15 @@ CREATE TABLE IF NOT EXISTS attachments (
   update_id VARCHAR(64) NULL,
   file_name VARCHAR(255) NOT NULL,
   file_type VARCHAR(64) NOT NULL,
+  file_size INT UNSIGNED NULL,
   file_url VARCHAR(1024) NOT NULL,
   uploaded_by VARCHAR(120) NOT NULL,
+  uploaded_by_user_id INT UNSIGNED NULL,
   uploaded_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT fk_attachments_activity FOREIGN KEY (activity_id) REFERENCES activities (id)
     ON UPDATE CASCADE ON DELETE CASCADE,
   CONSTRAINT fk_attachments_update FOREIGN KEY (update_id) REFERENCES daily_updates (id)
+    ON UPDATE CASCADE ON DELETE SET NULL,
+  CONSTRAINT fk_attachments_user FOREIGN KEY (uploaded_by_user_id) REFERENCES users (id)
     ON UPDATE CASCADE ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- Optional seed (safe to re-run with IGNORE)
-INSERT IGNORE INTO areas (id, name, description, created_by) VALUES
-  ('A01', 'Heavy Oil Complex', 'Crude and vacuum distillation cluster', 'system'),
-  ('A02', 'Conversion Block', 'Hydrocracker and delayed coker', 'system'),
-  ('A03', 'Utilities & Offsites', 'Steam, power, tankage', 'system');
-
-INSERT IGNORE INTO units (id, area_id, name, type) VALUES
-  ('CDU', 'A01', 'Crude Distillation', 'process'),
-  ('VDU', 'A01', 'Vacuum Distillation', 'process'),
-  ('HCU', 'A02', 'Hydrocracker', 'process'),
-  ('DCU', 'A02', 'Delayed Coker', 'process'),
-  ('STM', 'A03', 'Steam Generation', 'utilities');
-
-INSERT IGNORE INTO equipment (id, unit_id, tag_number, description, criticality, status, make, model) VALUES
-  ('EQ-120P-001A', 'CDU', '120P-001A', 'Crude Charge Pump A', 'high', 'maintenance', 'Flowserve', 'HPX-8x10'),
-  ('EQ-120P-001B', 'CDU', '120P-001B', 'Crude Charge Pump B', 'high', 'running', 'Flowserve', 'HPX-8x10'),
-  ('EQ-130E-012', 'CDU', '130E-012', 'Crude / Resid Exchanger', 'medium', 'running', NULL, NULL),
-  ('EQ-210C-003', 'HCU', '210C-003', 'Recycle Gas Compressor', 'high', 'standby', NULL, NULL);

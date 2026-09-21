@@ -1,12 +1,18 @@
 import { Button, Stack, Surface, Text } from '@/components/design-system';
 import { ActionForm } from '@/components/domain/ActionForm';
 import { PageHeader } from '@/components/layout/PageHeader';
+import { getSession } from '@/lib/auth/session';
+import { listTeams } from '@/lib/auth/users';
 import { listEquipment } from '@/lib/data/plant';
 import { createActivityAction } from '@/lib/data/plant-writes';
 import styles from './page.module.css';
 
 export default async function NewActivityPage() {
-  const equipment = await listEquipment();
+  const [equipment, teams, session] = await Promise.all([
+    listEquipment(),
+    listTeams(),
+    getSession(),
+  ]);
 
   return (
     <Stack gap={6}>
@@ -55,8 +61,8 @@ export default async function NewActivityPage() {
               </select>
             </label>
             <label className={styles.field}>
-              <span>Severity</span>
-              <select name="severity" defaultValue="medium">
+              <span>Priority</span>
+              <select name="priority" defaultValue="medium">
                 <option value="low">Low</option>
                 <option value="medium">Medium</option>
                 <option value="high">High</option>
@@ -66,19 +72,26 @@ export default async function NewActivityPage() {
           </div>
           <label className={styles.field}>
             <span>Assigned team</span>
-            <select name="team" defaultValue="rotating">
-              <option value="rotating">Rotating</option>
-              <option value="electrical">Electrical</option>
-              <option value="instrument">Instrument</option>
-              <option value="static">Static</option>
-              <option value="ops">Ops</option>
-              <option value="vendor">Vendor</option>
+            <select
+              name="teamId"
+              required
+              defaultValue={session?.teamId ? String(session.teamId) : '1'}
+            >
+              {teams.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.name}
+                </option>
+              ))}
             </select>
           </label>
-          <label className={styles.field}>
-            <span>Reported by</span>
-            <input name="author" placeholder="Your name" defaultValue="Operator" />
-          </label>
+          {!session ? (
+            <label className={styles.field}>
+              <span>Reported by</span>
+              <input name="author" placeholder="Your name" defaultValue="Operator" />
+            </label>
+          ) : (
+            <input type="hidden" name="author" value={session.name} />
+          )}
           <label className={styles.field}>
             <span>Description</span>
             <textarea

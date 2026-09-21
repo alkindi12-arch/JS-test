@@ -36,7 +36,7 @@ export async function dbListAreas(): Promise<Area[]> {
         JOIN units u ON u.id = e.unit_id
         WHERE u.area_id = a.id
           AND act.status IN ${ACTIVE_STATUSES}
-          AND act.severity IN ('high', 'emergency')
+          AND act.priority IN ('high', 'emergency')
       ) AS critical_alerts
     FROM areas a
     ORDER BY a.id
@@ -142,9 +142,12 @@ const ACTIVITY_SELECT = `
     act.equipment_id,
     act.title,
     act.activity_type,
-    act.severity,
+    act.priority,
     act.status,
     act.assigned_team,
+    act.assigned_team_id,
+    act.opened_by_user_id,
+    t.discipline AS team_discipline,
     act.start_date,
     COALESCE(
       (SELECT MAX(du.update_date) FROM daily_updates du WHERE du.activity_id = act.id),
@@ -165,6 +168,7 @@ const ACTIVITY_SELECT = `
       ELSE 0
     END AS is_delayed
   FROM activities act
+  LEFT JOIN teams t ON t.id = act.assigned_team_id
 `;
 
 export async function dbListActivities(): Promise<Activity[]> {
@@ -203,10 +207,19 @@ export async function dbActivitiesForEquipment(equipmentId: string): Promise<Act
 export async function dbUpdatesForActivity(activityId: string): Promise<DailyUpdate[]> {
   const [rows] = await getPool().query(
     `
-    SELECT id, activity_id, update_date, author, progress_notes, created_at
-    FROM daily_updates
-    WHERE activity_id = :activityId
-    ORDER BY update_date ASC, created_at ASC
+    SELECT
+      du.id,
+      du.activity_id,
+      du.update_date,
+      du.author,
+      du.progress_notes,
+      du.progress_pct,
+      du.created_at,
+      u.name AS user_name
+    FROM daily_updates du
+    LEFT JOIN users u ON u.id = du.updated_by_user_id
+    WHERE du.activity_id = :activityId
+    ORDER BY du.update_date ASC, du.created_at ASC
     `,
     { activityId },
   );
@@ -247,7 +260,7 @@ export async function dbKpiSummary(): Promise<KpiSummary> {
     count(`SELECT COUNT(*) AS n FROM activities WHERE status IN ${ACTIVE_STATUSES}`),
     count(
       `SELECT COUNT(*) AS n FROM activities
-       WHERE status IN ${ACTIVE_STATUSES} AND severity IN ('high', 'emergency')`,
+       WHERE status IN ${ACTIVE_STATUSES} AND priority IN ('high', 'emergency')`,
     ),
     count(
       `
@@ -276,22 +289,14 @@ export async function dbKpiSummary(): Promise<KpiSummary> {
 
   const [disciplineRows] = await pool.query(
     `
-    SELECT assigned_team AS team, COUNT(*) AS count
-    FROM activities
-    WHERE status IN ${ACTIVE_STATUSES}
-    GROUP BY assigned_team
+    SELECT COALESCE(t.name, act.assigned_team) AS team, COUNT(*) AS count
+    FROM activities act
+    LEFT JOIN teams t ON t.id = act.assigned_team_id
+    WHERE act.status IN ${ACTIVE_STATUSES}
+    GROUP BY COALESCE(t.name, act.assigned_team)
     ORDER BY count DESC
     `,
   );
-
-  const teamLabels: Record<string, string> = {
-    rotating: 'Rotating',
-    electrical: 'Electrical',
-    instrument: 'Instrument',
-    static: 'Static',
-    ops: 'Ops',
-    vendor: 'Vendor',
-  };
 
   return {
     activeTasks,
@@ -299,7 +304,7 @@ export async function dbKpiSummary(): Promise<KpiSummary> {
     delayedTasks,
     completedToday,
     byDiscipline: (disciplineRows as Row[]).map((r) => ({
-      team: teamLabels[String(r.team)] ?? String(r.team),
+      team: String(r.team),
       count: Number(r.count),
     })),
   };

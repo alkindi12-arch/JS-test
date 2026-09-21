@@ -55,12 +55,12 @@ export default async function ActivityDetailPage({
         </Badge>
         <Badge
           tone={
-            activity.severity === 'high' || activity.severity === 'emergency'
+            activity.priority === 'high' || activity.priority === 'emergency'
               ? 'danger'
               : 'signal'
           }
         >
-          {activity.severity}
+          {activity.priority}
         </Badge>
         <Badge>{activity.team}</Badge>
         {activity.delayed ? <Badge tone="danger">Delayed</Badge> : null}
@@ -90,6 +90,7 @@ export default async function ActivityDetailPage({
                     <div className={styles.eventBody}>
                       <Text size="xs" tone="mute">
                         {u.date} · {u.author}
+                        {u.progressPct != null ? ` · ${u.progressPct}%` : ''}
                       </Text>
                       <Text size="sm">{u.notes}</Text>
                     </div>
