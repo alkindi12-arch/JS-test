@@ -10,18 +10,19 @@
 
 Hosting: **Hostinger Node.js Web App** on `alkinda.com` (single Next.js deploy).
 
-## Database naming
+## Database (already created)
 
-Prefer Hostinger-prefixed names when the panel requires them:
+Old WordPress site on alkinda.com was removed. Domain registration stays. kdcoffeelab.com was not changed.
 
-| Role | Suggested |
-|------|-----------|
-| Database | `uXXXX_lineage` (whatever prefix Hostinger assigns + `_lineage`) |
-| User | same as database name |
-| Host | Remote MySQL hostname (`srv….hstgr.io`) — **not** `localhost` |
+| Role | Value |
+|------|--------|
+| Database | `u337841818_lineage` |
+| User | `u337841818_lineage_user` |
+| Host | `srv1764.hstgr.io` (not `localhost`) |
 | Port | `3306` |
+| Remote MySQL | Any host (`%`) so Node.js can connect |
 
-Import schema from `db/schema.mysql.sql` via phpMyAdmin after create.
+Schema `db/schema.mysql.sql` is already imported. Tables: `areas`, `units`, `equipment`, `activities`, `daily_updates`, `attachments`. Seed areas A01–A03 are present. Remote MySQL from Node was verified against `srv1764.hstgr.io`.
 
 ## hPanel → Node.js settings
 
