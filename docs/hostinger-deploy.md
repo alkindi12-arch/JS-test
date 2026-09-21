@@ -45,3 +45,16 @@ curl -s https://alkinda.com/api/health
 curl -s https://alkinda.com/api/ping
 curl -I https://alkinda.com/lineage/dashboard
 ```
+
+### Live deploy (2026-09-21)
+
+| Check | Result |
+|-------|--------|
+| `https://alkinda.com/` | Alkinda portal (200) |
+| `https://alkinda.com/lineage/dashboard` | Lineage UI (200) |
+| `https://alkinda.com/api/ping` | `NODE_OK` |
+| `https://alkinda.com/api/health` | `database.connected: true` |
+| Git branch | `cursor/equipment-history-plan-db65` |
+| Node | 22.x · `npm ci` · `npm run build` · `npm start` |
+
+Auto-deploy is enabled on that branch. **kdcoffeelab.com** was not modified.
