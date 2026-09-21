@@ -12,6 +12,7 @@ type Common = {
   size?: Size;
   block?: boolean;
   className?: string;
+  disabled?: boolean;
 };
 
 type AsButton = Common &

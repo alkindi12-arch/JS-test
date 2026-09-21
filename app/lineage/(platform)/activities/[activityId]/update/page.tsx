@@ -1,5 +1,9 @@
+import { notFound } from 'next/navigation';
 import { Button, Stack, Surface, Text } from '@/components/design-system';
+import { ActionForm } from '@/components/domain/ActionForm';
 import { PageHeader } from '@/components/layout/PageHeader';
+import { getActivity } from '@/lib/data/plant';
+import { addDailyUpdateAction } from '@/lib/data/plant-writes';
 import styles from './page.module.css';
 
 export default async function AddUpdatePage({
@@ -8,13 +12,15 @@ export default async function AddUpdatePage({
   params: Promise<{ activityId: string }>;
 }) {
   const { activityId } = await params;
+  const activity = await getActivity(activityId);
+  if (!activity) notFound();
 
   return (
     <Stack gap={6}>
       <PageHeader
         eyebrow={activityId}
         title="Add daily update"
-        description="Progress, findings, condition check, and attachments."
+        description="Posts a timeline entry to Hostinger MySQL. Open activities move to In Progress automatically."
         breadcrumbs={[
           { label: 'Activities', href: '/lineage/activities' },
           { label: activityId, href: `/lineage/activities/${activityId}` },
@@ -22,34 +28,50 @@ export default async function AddUpdatePage({
         ]}
       />
       <Surface pad={5} className={`animate-fade-up ${styles.form}`}>
-        <form className={styles.fields}>
+        <ActionForm
+          action={addDailyUpdateAction}
+          submitLabel="Post update"
+          className={styles.fields}
+        >
+          <input type="hidden" name="activityId" value={activityId} />
+          <label className={styles.field}>
+            <span>Author</span>
+            <input name="author" defaultValue="Technician" />
+          </label>
           <label className={styles.field}>
             <span>Progress notes</span>
-            <textarea rows={4} placeholder="What was done this shift?" />
+            <textarea name="notes" rows={4} required placeholder="What was done this shift?" />
           </label>
           <label className={styles.field}>
             <span>Findings</span>
-            <textarea rows={3} placeholder="Observations, measurements…" />
+            <textarea name="findings" rows={3} placeholder="Observations, measurements…" />
           </label>
           <label className={styles.field}>
             <span>Equipment condition</span>
-            <select defaultValue="unchanged">
+            <select name="condition" defaultValue="unchanged">
               <option value="improved">Improved</option>
               <option value="unchanged">Unchanged</option>
               <option value="worsened">Worsened</option>
             </select>
           </label>
           <label className={styles.field}>
-            <span>Attachments</span>
-            <input type="file" multiple />
+            <span>Also set status</span>
+            <select name="setStatus" defaultValue="">
+              <option value="">Auto (Open → In Progress)</option>
+              <option value="in_progress">In Progress</option>
+              <option value="waiting_parts">Waiting Parts</option>
+              <option value="completed">Completed</option>
+            </select>
           </label>
-          <div className={styles.actions}>
+          <Text size="xs" tone="faint">
+            File uploads will land in a later phase — notes save now.
+          </Text>
+          <div className={styles.actionsRow}>
             <Button variant="secondary" href={`/lineage/activities/${activityId}`}>
               Cancel
             </Button>
-            <Button type="button">Post update</Button>
           </div>
-        </form>
+        </ActionForm>
       </Surface>
     </Stack>
   );

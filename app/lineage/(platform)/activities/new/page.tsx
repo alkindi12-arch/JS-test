@@ -1,14 +1,19 @@
 import { Button, Stack, Surface, Text } from '@/components/design-system';
+import { ActionForm } from '@/components/domain/ActionForm';
 import { PageHeader } from '@/components/layout/PageHeader';
+import { listEquipment } from '@/lib/data/plant';
+import { createActivityAction } from '@/lib/data/plant-writes';
 import styles from './page.module.css';
 
-export default function NewActivityPage() {
+export default async function NewActivityPage() {
+  const equipment = await listEquipment();
+
   return (
     <Stack gap={6}>
       <PageHeader
         eyebrow="Create"
         title="New activity"
-        description="Concept form — wired to design-system inputs. API persistence comes in Phase 1."
+        description="Saves to Hostinger MySQL as status Open. Description becomes the first timeline entry."
         breadcrumbs={[
           { label: 'Activities', href: '/lineage/activities' },
           { label: 'New' },
@@ -16,10 +21,27 @@ export default function NewActivityPage() {
       />
 
       <Surface pad={5} className={`animate-fade-up ${styles.form}`}>
-        <form className={styles.fields}>
+        <ActionForm
+          action={createActivityAction}
+          submitLabel="Save as open"
+          className={styles.fields}
+        >
+          <label className={styles.field}>
+            <span>Equipment</span>
+            <select name="equipmentId" required defaultValue="">
+              <option value="" disabled>
+                Select tag…
+              </option>
+              {equipment.map((e) => (
+                <option key={e.id} value={e.id}>
+                  {e.tagNumber} — {e.description}
+                </option>
+              ))}
+            </select>
+          </label>
           <label className={styles.field}>
             <span>Title</span>
-            <input name="title" placeholder="e.g. Pump vibration high" />
+            <input name="title" required placeholder="e.g. Pump vibration high" />
           </label>
           <div className={styles.row}>
             <label className={styles.field}>
@@ -54,16 +76,23 @@ export default function NewActivityPage() {
             </select>
           </label>
           <label className={styles.field}>
-            <span>Description</span>
-            <textarea name="description" rows={4} placeholder="Issue details, symptoms, location…" />
+            <span>Reported by</span>
+            <input name="author" placeholder="Your name" defaultValue="Operator" />
           </label>
-          <div className={styles.actions}>
+          <label className={styles.field}>
+            <span>Description</span>
+            <textarea
+              name="description"
+              rows={4}
+              placeholder="Issue details, symptoms, location…"
+            />
+          </label>
+          <div className={styles.actionsRow}>
             <Button variant="secondary" href="/lineage/activities">
               Cancel
             </Button>
-            <Button type="button">Save as open</Button>
           </div>
-        </form>
+        </ActionForm>
       </Surface>
     </Stack>
   );

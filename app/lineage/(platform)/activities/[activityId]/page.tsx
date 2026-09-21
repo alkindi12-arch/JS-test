@@ -1,5 +1,6 @@
 import { notFound } from 'next/navigation';
 import { Badge, Button, Stack, Surface, Text } from '@/components/design-system';
+import { MarkCompletedButton } from '@/components/domain/MarkCompletedButton';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { labelActivityStatus, labelActivityType } from '@/lib/format';
 import {
@@ -25,6 +26,9 @@ export default async function ActivityDetailPage({
     attachmentsForActivity(activity.id),
   ]);
 
+  const canComplete =
+    activity.status !== 'completed' && activity.status !== 'closed';
+
   return (
     <Stack gap={6}>
       <PageHeader
@@ -49,7 +53,13 @@ export default async function ActivityDetailPage({
         <Badge tone="accent" dot>
           {labelActivityStatus(activity.status)}
         </Badge>
-        <Badge tone={activity.severity === 'high' || activity.severity === 'emergency' ? 'danger' : 'signal'}>
+        <Badge
+          tone={
+            activity.severity === 'high' || activity.severity === 'emergency'
+              ? 'danger'
+              : 'signal'
+          }
+        >
           {activity.severity}
         </Badge>
         <Badge>{activity.team}</Badge>
@@ -112,9 +122,7 @@ export default async function ActivityDetailPage({
             <Text size="sm" tone="mute">
               Open → In Progress → Waiting Parts → Completed → Closed
             </Text>
-            <Button variant="secondary" block>
-              Mark completed
-            </Button>
+            <MarkCompletedButton activityId={activity.id} disabled={!canComplete} />
           </Stack>
         </Surface>
       </div>
