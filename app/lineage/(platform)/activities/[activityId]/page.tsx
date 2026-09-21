@@ -2,29 +2,13 @@ import { notFound } from 'next/navigation';
 import { Badge, Button, Stack, Surface, Text } from '@/components/design-system';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { labelActivityStatus, labelActivityType } from '@/lib/format';
-import { getActivity, getEquipment } from '@/lib/mock/plant';
+import {
+  attachmentsForActivity,
+  getActivity,
+  getEquipment,
+  updatesForActivity,
+} from '@/lib/data/plant';
 import styles from './page.module.css';
-
-const sampleUpdates = [
-  {
-    id: 'u1',
-    date: '2026-09-18 · 09:40',
-    author: 'Tech. Rahman',
-    notes: 'Vibration confirmed on DE bearing. Peak 12.4 mm/s. Isolation requested.',
-  },
-  {
-    id: 'u2',
-    date: '2026-09-19 · 14:15',
-    author: 'Tech. Rahman',
-    notes: 'Bearing housing opened. Evidence of lubricant degradation. Parts indent raised.',
-  },
-  {
-    id: 'u3',
-    date: '2026-09-20 · 08:05',
-    author: 'Superv. Khan',
-    notes: 'Waiting seal kit ETA tomorrow. Continue standby on 120P-001B.',
-  },
-];
 
 export default async function ActivityDetailPage({
   params,
@@ -32,9 +16,14 @@ export default async function ActivityDetailPage({
   params: Promise<{ activityId: string }>;
 }) {
   const { activityId } = await params;
-  const activity = getActivity(activityId);
+  const activity = await getActivity(activityId);
   if (!activity) notFound();
-  const eq = getEquipment(activity.equipmentId);
+
+  const [eq, updates, attachments] = await Promise.all([
+    getEquipment(activity.equipmentId),
+    updatesForActivity(activity.id),
+    attachmentsForActivity(activity.id),
+  ]);
 
   return (
     <Stack gap={6}>
@@ -60,7 +49,7 @@ export default async function ActivityDetailPage({
         <Badge tone="accent" dot>
           {labelActivityStatus(activity.status)}
         </Badge>
-        <Badge tone={activity.severity === 'high' ? 'danger' : 'signal'}>
+        <Badge tone={activity.severity === 'high' || activity.severity === 'emergency' ? 'danger' : 'signal'}>
           {activity.severity}
         </Badge>
         <Badge>{activity.team}</Badge>
@@ -74,24 +63,30 @@ export default async function ActivityDetailPage({
               Daily progress
             </Text>
             <Text size="sm" tone="mute">
-              Timeline pattern — expandable to unlimited updates and attachments.
+              Timeline from Hostinger MySQL — expandable to unlimited updates.
             </Text>
-            <ol className={styles.timeline}>
-              {sampleUpdates.map((u, i) => (
-                <li key={u.id} className={styles.event}>
-                  <span className={styles.rail} aria-hidden>
-                    <span className={styles.dot} />
-                    {i < sampleUpdates.length - 1 ? <span className={styles.line} /> : null}
-                  </span>
-                  <div className={styles.eventBody}>
-                    <Text size="xs" tone="mute">
-                      {u.date} · {u.author}
-                    </Text>
-                    <Text size="sm">{u.notes}</Text>
-                  </div>
-                </li>
-              ))}
-            </ol>
+            {updates.length === 0 ? (
+              <Text size="sm" tone="mute">
+                No daily updates yet.
+              </Text>
+            ) : (
+              <ol className={styles.timeline}>
+                {updates.map((u, i) => (
+                  <li key={u.id} className={styles.event}>
+                    <span className={styles.rail} aria-hidden>
+                      <span className={styles.dot} />
+                      {i < updates.length - 1 ? <span className={styles.line} /> : null}
+                    </span>
+                    <div className={styles.eventBody}>
+                      <Text size="xs" tone="mute">
+                        {u.date} · {u.author}
+                      </Text>
+                      <Text size="sm">{u.notes}</Text>
+                    </div>
+                  </li>
+                ))}
+              </ol>
+            )}
           </Stack>
         </Surface>
 
@@ -100,11 +95,17 @@ export default async function ActivityDetailPage({
             <Text as="h2" display size="lg">
               Attachments
             </Text>
-            <ul className={styles.files}>
-              <li>vibration_trend_0918.jpg</li>
-              <li>permit_LOTO_1042.pdf</li>
-              <li>bearing_housing.mp4</li>
-            </ul>
+            {attachments.length === 0 ? (
+              <Text size="sm" tone="mute">
+                No files linked yet.
+              </Text>
+            ) : (
+              <ul className={styles.files}>
+                {attachments.map((f) => (
+                  <li key={f.id}>{f.fileName}</li>
+                ))}
+              </ul>
+            )}
             <Text as="h2" display size="lg">
               Next status
             </Text>

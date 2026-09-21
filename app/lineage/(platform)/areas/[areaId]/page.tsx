@@ -1,7 +1,7 @@
 import { notFound } from 'next/navigation';
 import { Grid, KpiMetric, Stack, Surface, Text } from '@/components/design-system';
 import { PageHeader } from '@/components/layout/PageHeader';
-import { getArea, unitsForArea } from '@/lib/mock/plant';
+import { getArea, unitsForArea } from '@/lib/data/plant';
 
 export default async function AreaDetailPage({
   params,
@@ -9,9 +9,9 @@ export default async function AreaDetailPage({
   params: Promise<{ areaId: string }>;
 }) {
   const { areaId } = await params;
-  const area = getArea(areaId);
+  const area = await getArea(areaId);
   if (!area) notFound();
-  const units = unitsForArea(area.id);
+  const units = await unitsForArea(area.id);
 
   return (
     <Stack gap={6}>

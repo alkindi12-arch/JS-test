@@ -7,7 +7,7 @@ import {
   activitiesForEquipment,
   getEquipment,
   getUnit,
-} from '@/lib/mock/plant';
+} from '@/lib/data/plant';
 
 export default async function EquipmentDetailPage({
   params,
@@ -15,10 +15,12 @@ export default async function EquipmentDetailPage({
   params: Promise<{ equipmentId: string }>;
 }) {
   const { equipmentId } = await params;
-  const item = getEquipment(equipmentId);
+  const item = await getEquipment(equipmentId);
   if (!item) notFound();
-  const unit = getUnit(item.unitId);
-  const history = activitiesForEquipment(item.id);
+  const [unit, history] = await Promise.all([
+    getUnit(item.unitId),
+    activitiesForEquipment(item.id),
+  ]);
 
   return (
     <Stack gap={6}>
@@ -28,14 +30,10 @@ export default async function EquipmentDetailPage({
         description={item.description}
         breadcrumbs={[
           { label: 'Equipment', href: '/lineage/equipment' },
-          ...(unit
-            ? [{ label: unit.id, href: `/lineage/units/${unit.id}` }]
-            : []),
+          ...(unit ? [{ label: unit.id, href: `/lineage/units/${unit.id}` }] : []),
           { label: item.tagNumber },
         ]}
-        actions={
-          <Button href="/lineage/activities/new">Create activity</Button>
-        }
+        actions={<Button href="/lineage/activities/new">Create activity</Button>}
       />
 
       <Grid columns={3} gap={4} className="animate-fade-up">
@@ -44,10 +42,7 @@ export default async function EquipmentDetailPage({
             <Text size="sm" tone="mute">
               Status
             </Text>
-            <Badge
-              tone={item.status === 'maintenance' ? 'danger' : 'ok'}
-              dot
-            >
+            <Badge tone={item.status === 'maintenance' ? 'danger' : 'ok'} dot>
               {labelEquipmentStatus(item.status)}
             </Badge>
           </Stack>

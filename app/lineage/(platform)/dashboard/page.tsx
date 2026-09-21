@@ -8,12 +8,26 @@ import {
 } from '@/components/design-system';
 import { ActivityRow } from '@/components/domain/ActivityRow';
 import { PageHeader } from '@/components/layout/PageHeader';
-import { activities, areas, equipment, kpiSummary } from '@/lib/mock/plant';
+import {
+  getDataSource,
+  getKpiSummary,
+  listActivities,
+  listAreas,
+  listEquipment,
+} from '@/lib/data/plant';
 import styles from './page.module.css';
 
-export default function DashboardPage() {
+export default async function DashboardPage() {
+  const [areas, activities, equipment, kpiSummary, source] = await Promise.all([
+    listAreas(),
+    listActivities(),
+    listEquipment(),
+    getKpiSummary(),
+    getDataSource(),
+  ]);
   const recent = activities.filter((a) => a.status !== 'closed').slice(0, 4);
   const tagMap = Object.fromEntries(equipment.map((e) => [e.id, e.tagNumber]));
+  const maxDiscipline = Math.max(1, ...kpiSummary.byDiscipline.map((d) => d.count));
 
   return (
     <Stack gap={8}>
@@ -26,17 +40,19 @@ export default function DashboardPage() {
             <Button href="/lineage/activities" variant="secondary">
               View activities
             </Button>
-            <Button href="/lineage/activities/new">
-              New activity
-            </Button>
+            <Button href="/lineage/activities/new">New activity</Button>
           </>
         }
       />
 
+      <Text size="xs" tone="faint">
+        Data source: {source === 'mysql' ? 'Hostinger MySQL' : 'local mock'}
+      </Text>
+
       <section className={`animate-fade-up stagger-1 ${styles.kpiSection}`} aria-label="Key metrics">
         <Grid columns={4} gap={4}>
           <Surface pad={5}>
-            <KpiMetric label="Active tasks" value={kpiSummary.activeTasks} hint="Across all areas" />
+            <KpiMetric label="Active tasks" value={kpiSummary.activeTasks} hint="Open / in progress / waiting" />
           </Surface>
           <Surface pad={5}>
             <KpiMetric
@@ -51,7 +67,7 @@ export default function DashboardPage() {
               label="Delayed"
               value={kpiSummary.delayedTasks}
               tone="signal"
-              hint="Past SLA / stale updates"
+              hint="Waiting parts or stale > 3 days"
             />
           </Surface>
           <Surface pad={5}>
@@ -111,24 +127,30 @@ export default function DashboardPage() {
             <Text as="h2" display size="xl">
               Work by discipline
             </Text>
-            <div className={styles.disciplineBars}>
-              {kpiSummary.byDiscipline.map((d) => (
-                <div key={d.team} className={styles.disciplineRow}>
-                  <Text size="sm" weight="medium">
-                    {d.team}
-                  </Text>
-                  <div className={styles.barTrack} aria-hidden>
-                    <div
-                      className={styles.barFill}
-                      style={{ width: `${(d.count / 9) * 100}%` }}
-                    />
+            {kpiSummary.byDiscipline.length === 0 ? (
+              <Text size="sm" tone="mute">
+                No active activities yet.
+              </Text>
+            ) : (
+              <div className={styles.disciplineBars}>
+                {kpiSummary.byDiscipline.map((d) => (
+                  <div key={d.team} className={styles.disciplineRow}>
+                    <Text size="sm" weight="medium">
+                      {d.team}
+                    </Text>
+                    <div className={styles.barTrack} aria-hidden>
+                      <div
+                        className={styles.barFill}
+                        style={{ width: `${(d.count / maxDiscipline) * 100}%` }}
+                      />
+                    </div>
+                    <Text size="sm" mono tone="mute">
+                      {d.count}
+                    </Text>
                   </div>
-                  <Text size="sm" mono tone="mute">
-                    {d.count}
-                  </Text>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </Stack>
         </Surface>
       </section>
@@ -150,6 +172,11 @@ export default function DashboardPage() {
                   tag={tagMap[activity.equipmentId]}
                 />
               ))}
+              {recent.length === 0 ? (
+                <Text size="sm" tone="mute">
+                  No open activities.
+                </Text>
+              ) : null}
             </div>
           </Stack>
         </Surface>

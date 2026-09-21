@@ -1,8 +1,10 @@
 import { Grid, Stack, Surface, Text } from '@/components/design-system';
 import { PageHeader } from '@/components/layout/PageHeader';
-import { areas } from '@/lib/mock/plant';
+import { listAreas } from '@/lib/data/plant';
 
-export default function AreasPage() {
+export default async function AreasPage() {
+  const areas = await listAreas();
+
   return (
     <Stack gap={6}>
       <PageHeader

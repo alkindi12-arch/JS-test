@@ -2,7 +2,7 @@ import { notFound } from 'next/navigation';
 import { Button, Grid, KpiMetric, Stack, Surface, Text } from '@/components/design-system';
 import { EquipmentListItem } from '@/components/domain/EquipmentListItem';
 import { PageHeader } from '@/components/layout/PageHeader';
-import { equipmentForUnit, getArea, getUnit } from '@/lib/mock/plant';
+import { equipmentForUnit, getArea, getUnit } from '@/lib/data/plant';
 
 export default async function UnitDetailPage({
   params,
@@ -10,10 +10,12 @@ export default async function UnitDetailPage({
   params: Promise<{ unitId: string }>;
 }) {
   const { unitId } = await params;
-  const unit = getUnit(unitId);
+  const unit = await getUnit(unitId);
   if (!unit) notFound();
-  const area = getArea(unit.areaId);
-  const items = equipmentForUnit(unit.id);
+  const [area, items] = await Promise.all([
+    getArea(unit.areaId),
+    equipmentForUnit(unit.id),
+  ]);
 
   return (
     <Stack gap={6}>
@@ -37,7 +39,7 @@ export default async function UnitDetailPage({
           <KpiMetric label="Active activities" value={unit.activeActivities} tone="accent" />
         </Surface>
         <Surface pad={5}>
-          <KpiMetric label="Listed tags" value={items.length} hint="Sample seed data" />
+          <KpiMetric label="Listed tags" value={items.length} />
         </Surface>
       </Grid>
 
@@ -52,7 +54,7 @@ export default async function UnitDetailPage({
         ))}
         {items.length === 0 ? (
           <div style={{ padding: 'var(--space-5)' }}>
-            <Text tone="mute">No equipment seeded for this unit yet.</Text>
+            <Text tone="mute">No equipment for this unit yet.</Text>
           </div>
         ) : null}
       </Surface>

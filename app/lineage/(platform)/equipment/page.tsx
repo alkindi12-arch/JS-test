@@ -1,9 +1,11 @@
-import { Stack, Surface, Text } from '@/components/design-system';
+import { Stack, Surface } from '@/components/design-system';
 import { EquipmentListItem } from '@/components/domain/EquipmentListItem';
 import { PageHeader } from '@/components/layout/PageHeader';
-import { equipment } from '@/lib/mock/plant';
+import { listEquipment } from '@/lib/data/plant';
 
-export default function EquipmentCataloguePage() {
+export default async function EquipmentCataloguePage() {
+  const equipment = await listEquipment();
+
   return (
     <Stack gap={6}>
       <PageHeader

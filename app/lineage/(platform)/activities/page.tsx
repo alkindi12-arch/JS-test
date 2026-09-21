@@ -1,9 +1,13 @@
 import { Button, Stack, Surface, Text } from '@/components/design-system';
 import { ActivityRow } from '@/components/domain/ActivityRow';
 import { PageHeader } from '@/components/layout/PageHeader';
-import { activities, equipment } from '@/lib/mock/plant';
+import { listActivities, listEquipment } from '@/lib/data/plant';
 
-export default function ActivitiesPage() {
+export default async function ActivitiesPage() {
+  const [activities, equipment] = await Promise.all([
+    listActivities(),
+    listEquipment(),
+  ]);
   const tagMap = Object.fromEntries(equipment.map((e) => [e.id, e.tagNumber]));
 
   return (
@@ -12,13 +16,16 @@ export default function ActivitiesPage() {
         eyebrow="Work stream"
         title="Activities"
         description="Cross-hierarchy list with status, severity, and discipline."
-        breadcrumbs={[{ label: 'Dashboard', href: '/lineage/dashboard' }, { label: 'Activities' }]}
+        breadcrumbs={[
+          { label: 'Dashboard', href: '/lineage/dashboard' },
+          { label: 'Activities' },
+        ]}
         actions={<Button href="/lineage/activities/new">New activity</Button>}
       />
       <Surface pad={5} className="animate-fade-up">
         <Stack gap={1}>
           <Text size="sm" tone="mute">
-            Showing {activities.length} sample activities
+            Showing {activities.length} activities
           </Text>
           {activities.map((activity) => (
             <ActivityRow
