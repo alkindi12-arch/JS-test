@@ -62,6 +62,19 @@ export interface Activity {
   lastUpdate: string;
   delayed?: boolean;
   openedByUserId?: number | null;
+  openedAt?: string | null;
+  closedAt?: string | null;
+}
+
+export interface RootCauseAnalysis {
+  id: number;
+  activityId: string;
+  failureMode?: string | null;
+  rootCause?: string | null;
+  correctiveAction?: string | null;
+  verifiedByUserId?: number | null;
+  verifiedByName?: string | null;
+  verifiedAt?: string | null;
 }
 
 export interface DailyUpdate {

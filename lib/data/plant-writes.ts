@@ -90,10 +90,12 @@ export async function createActivityAction(
     `
     INSERT INTO activities (
       id, equipment_id, title, activity_type, priority, status,
-      assigned_team, assigned_team_id, start_date, created_by, opened_by_user_id
+      assigned_team, assigned_team_id, start_date, opened_at,
+      created_by, opened_by_user_id
     ) VALUES (
       :id, :equipmentId, :title, :type, :priority, 'open',
-      :teamDiscipline, :teamId, :startDate, :author, :openedBy
+      :teamDiscipline, :teamId, :startDate, NOW(),
+      :author, :openedBy
     )
     `,
     {
@@ -211,7 +213,8 @@ export async function addDailyUpdateAction(
       `
       UPDATE activities
       SET status = :status,
-          end_date = IF(:setEnd = 1, :endDate, end_date)
+          end_date = IF(:setEnd = 1, :endDate, end_date),
+          closed_at = IF(:setEnd = 1, COALESCE(closed_at, NOW()), closed_at)
       WHERE id = :id
       `,
       {
@@ -252,7 +255,9 @@ export async function markActivityCompletedAction(activityId: string): Promise<A
   await pool.query(
     `
     UPDATE activities
-    SET status = 'completed', end_date = :endDate
+    SET status = 'completed',
+        end_date = :endDate,
+        closed_at = COALESCE(closed_at, NOW())
     WHERE id = :id
     `,
     { id: activityId, endDate },
@@ -275,6 +280,179 @@ export async function markActivityCompletedAction(activityId: string): Promise<A
       author: session?.name ?? 'Supervisor',
       userId: session?.id ?? null,
       notes: 'Marked completed.',
+    },
+  );
+
+  revalidatePath(lineagePath('/dashboard'));
+  revalidatePath(lineagePath('/activities'));
+  revalidatePath(lineagePath(`/activities/${activityId}`));
+  revalidatePath(lineagePath(`/equipment/${activity.equipment_id}`));
+
+  redirect(lineagePath(`/activities/${activityId}`));
+}
+
+async function upsertRca(
+  activityId: string,
+  fields: {
+    failureMode: string | null;
+    rootCause: string | null;
+    correctiveAction: string | null;
+    verifiedByUserId: number | null;
+    verify: boolean;
+  },
+): Promise<void> {
+  await getPool().query(
+    `
+    INSERT INTO root_cause_analysis (
+      activity_id, failure_mode, root_cause, corrective_action,
+      verified_by_user_id, verified_at
+    ) VALUES (
+      :activityId, :failureMode, :rootCause, :correctiveAction,
+      :verifiedBy, IF(:verify = 1, NOW(), NULL)
+    )
+    ON DUPLICATE KEY UPDATE
+      failure_mode = VALUES(failure_mode),
+      root_cause = VALUES(root_cause),
+      corrective_action = VALUES(corrective_action),
+      verified_by_user_id = IF(:verify = 1, VALUES(verified_by_user_id), verified_by_user_id),
+      verified_at = IF(:verify = 1, NOW(), verified_at)
+    `,
+    {
+      activityId,
+      failureMode: fields.failureMode,
+      rootCause: fields.rootCause,
+      correctiveAction: fields.correctiveAction,
+      verifiedBy: fields.verifiedByUserId,
+      verify: fields.verify ? 1 : 0,
+    },
+  );
+
+  // Keep denormalized columns in sync for older readers / reports
+  await getPool().query(
+    `
+    UPDATE activities
+    SET root_cause = :rootCause,
+        corrective_action = :correctiveAction
+    WHERE id = :activityId
+    `,
+    {
+      activityId,
+      rootCause: fields.rootCause,
+      correctiveAction: fields.correctiveAction,
+    },
+  );
+}
+
+export async function saveRcaAction(
+  _prev: ActionState,
+  form: FormData,
+): Promise<ActionState> {
+  const blocked = requireDb();
+  if (blocked) return blocked;
+
+  const session = await getSession();
+  const activityId = str(form, 'activityId');
+  const failureMode = str(form, 'failureMode') || null;
+  const rootCause = str(form, 'rootCause') || null;
+  const correctiveAction = str(form, 'correctiveAction') || null;
+  const verify = str(form, 'verify') === '1';
+
+  if (!activityId) return { ok: false, error: 'Activity id missing.' };
+  if (!failureMode && !rootCause && !correctiveAction) {
+    return { ok: false, error: 'Enter at least one RCA field.' };
+  }
+
+  const pool = getPool();
+  const [actRows] = await pool.query(
+    `SELECT id, equipment_id FROM activities WHERE id = :id LIMIT 1`,
+    { id: activityId },
+  );
+  const activity = (actRows as Array<{ id: string; equipment_id: string }>)[0];
+  if (!activity) return { ok: false, error: 'Activity not found.' };
+
+  await upsertRca(activityId, {
+    failureMode,
+    rootCause,
+    correctiveAction,
+    verifiedByUserId: verify ? (session?.id ?? null) : null,
+    verify,
+  });
+
+  revalidatePath(lineagePath(`/activities/${activityId}`));
+  revalidatePath(lineagePath(`/equipment/${activity.equipment_id}`));
+
+  redirect(lineagePath(`/activities/${activityId}`));
+}
+
+export async function closeActivityAction(
+  _prev: ActionState,
+  form: FormData,
+): Promise<ActionState> {
+  const blocked = requireDb();
+  if (blocked) return blocked;
+
+  const session = await getSession();
+  const activityId = str(form, 'activityId');
+  const failureMode = str(form, 'failureMode') || null;
+  const rootCause = str(form, 'rootCause') || null;
+  const correctiveAction = str(form, 'correctiveAction') || null;
+  const closingNotes = str(form, 'closingNotes') || null;
+
+  if (!activityId) return { ok: false, error: 'Activity id missing.' };
+  if (!rootCause) return { ok: false, error: 'Root cause is required to close.' };
+  if (!correctiveAction) {
+    return { ok: false, error: 'Corrective action is required to close.' };
+  }
+
+  const pool = getPool();
+  const [actRows] = await pool.query(
+    `SELECT id, equipment_id, status FROM activities WHERE id = :id LIMIT 1`,
+    { id: activityId },
+  );
+  const activity = (actRows as Array<{ id: string; equipment_id: string; status: string }>)[0];
+  if (!activity) return { ok: false, error: 'Activity not found.' };
+  if (activity.status === 'closed') {
+    return { ok: false, error: 'Activity is already closed.' };
+  }
+
+  await upsertRca(activityId, {
+    failureMode,
+    rootCause,
+    correctiveAction,
+    verifiedByUserId: session?.id ?? null,
+    verify: true,
+  });
+
+  const endDate = new Date().toISOString().slice(0, 10);
+  await pool.query(
+    `
+    UPDATE activities
+    SET status = 'closed',
+        end_date = COALESCE(end_date, :endDate),
+        closed_at = COALESCE(closed_at, NOW()),
+        closing_notes = COALESCE(:closingNotes, closing_notes)
+    WHERE id = :id
+    `,
+    { id: activityId, endDate, closingNotes },
+  );
+
+  await pool.query(
+    `
+    INSERT INTO daily_updates (
+      id, activity_id, update_date, author, updated_by_user_id,
+      progress_notes, findings, condition_check, progress_pct
+    ) VALUES (
+      :id, :activityId, :updateDate, :author, :userId,
+      :notes, NULL, 'improved', 100
+    )
+    `,
+    {
+      id: newUpdateId(activityId),
+      activityId,
+      updateDate: endDate,
+      author: session?.name ?? 'Supervisor',
+      userId: session?.id ?? null,
+      notes: closingNotes || 'Activity closed with RCA verified.',
     },
   );
 

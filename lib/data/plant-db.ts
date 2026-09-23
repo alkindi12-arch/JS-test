@@ -5,10 +5,18 @@ import {
   mapAttachment,
   mapDailyUpdate,
   mapEquipment,
+  mapRca,
   mapUnit,
   type AttachmentMeta,
 } from '@/lib/data/mappers';
-import type { Activity, Area, DailyUpdate, Equipment, Unit } from '@/lib/types/domain';
+import type {
+  Activity,
+  Area,
+  DailyUpdate,
+  Equipment,
+  RootCauseAnalysis,
+  Unit,
+} from '@/lib/types/domain';
 
 type Row = Record<string, unknown>;
 
@@ -147,6 +155,8 @@ const ACTIVITY_SELECT = `
     act.assigned_team,
     act.assigned_team_id,
     act.opened_by_user_id,
+    act.opened_at,
+    act.closed_at,
     t.discipline AS team_discipline,
     act.start_date,
     COALESCE(
@@ -239,6 +249,29 @@ export async function dbAttachmentsForActivity(activityId: string): Promise<Atta
   return (rows as Row[]).map(mapAttachment);
 }
 
+export async function dbGetRca(activityId: string): Promise<RootCauseAnalysis | null> {
+  const [rows] = await getPool().query(
+    `
+    SELECT
+      rca.id,
+      rca.activity_id,
+      rca.failure_mode,
+      rca.root_cause,
+      rca.corrective_action,
+      rca.verified_by_user_id,
+      rca.verified_at,
+      u.name AS verified_by_name
+    FROM root_cause_analysis rca
+    LEFT JOIN users u ON u.id = rca.verified_by_user_id
+    WHERE rca.activity_id = :activityId
+    LIMIT 1
+    `,
+    { activityId },
+  );
+  const list = rows as Row[];
+  return list[0] ? mapRca(list[0]) : null;
+}
+
 export type KpiSummary = {
   activeTasks: number;
   criticalTasks: number;
@@ -282,7 +315,7 @@ export async function dbKpiSummary(): Promise<KpiSummary> {
       `
       SELECT COUNT(*) AS n FROM activities
       WHERE status IN ('completed', 'closed')
-        AND DATE(updated_at) = CURDATE()
+        AND DATE(COALESCE(closed_at, updated_at)) = CURDATE()
       `,
     ),
   ]);

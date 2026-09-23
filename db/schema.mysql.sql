@@ -94,7 +94,9 @@ CREATE TABLE IF NOT EXISTS activities (
   assigned_team ENUM('rotating', 'electrical', 'instrument', 'static', 'ops', 'vendor') NOT NULL,
   assigned_team_id INT UNSIGNED NULL,
   start_date DATE NOT NULL,
+  opened_at DATETIME NULL,
   end_date DATE NULL,
+  closed_at DATETIME NULL,
   closing_notes TEXT NULL,
   root_cause TEXT NULL,
   corrective_action TEXT NULL,
@@ -111,6 +113,23 @@ CREATE TABLE IF NOT EXISTS activities (
     ON UPDATE CASCADE ON DELETE SET NULL,
   KEY idx_activities_status (status),
   KEY idx_activities_equipment (equipment_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS root_cause_analysis (
+  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  activity_id VARCHAR(64) NOT NULL,
+  failure_mode VARCHAR(255) NULL,
+  root_cause TEXT NULL,
+  corrective_action TEXT NULL,
+  verified_by_user_id INT UNSIGNED NULL,
+  verified_at DATETIME NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_rca_activity (activity_id),
+  CONSTRAINT fk_rca_activity FOREIGN KEY (activity_id) REFERENCES activities (id)
+    ON UPDATE CASCADE ON DELETE CASCADE,
+  CONSTRAINT fk_rca_verified_by FOREIGN KEY (verified_by_user_id) REFERENCES users (id)
+    ON UPDATE CASCADE ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS daily_updates (

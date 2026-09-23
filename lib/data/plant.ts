@@ -8,7 +8,14 @@ import type { AttachmentMeta } from '@/lib/data/mappers';
 import * as db from '@/lib/data/plant-db';
 import type { KpiSummary } from '@/lib/data/plant-db';
 import * as mock from '@/lib/mock/plant';
-import type { Activity, Area, DailyUpdate, Equipment, Unit } from '@/lib/types/domain';
+import type {
+  Activity,
+  Area,
+  DailyUpdate,
+  Equipment,
+  RootCauseAnalysis,
+  Unit,
+} from '@/lib/types/domain';
 
 export type DataSource = 'mysql' | 'mock';
 
@@ -124,6 +131,23 @@ export async function attachmentsForActivity(activityId: string): Promise<Attach
     ];
   }
   return db.dbAttachmentsForActivity(activityId);
+}
+
+export async function getRca(activityId: string): Promise<RootCauseAnalysis | null> {
+  if (!isDatabaseConfigured()) {
+    if (activityId !== 'ACT-1042') return null;
+    return {
+      id: 1,
+      activityId,
+      failureMode: 'Bearing wear',
+      rootCause: 'Lubricant degradation under sustained high load',
+      correctiveAction: 'Replace DE bearing + seal kit; revise lube interval',
+      verifiedByUserId: null,
+      verifiedByName: null,
+      verifiedAt: null,
+    };
+  }
+  return db.dbGetRca(activityId);
 }
 
 export async function getKpiSummary(): Promise<KpiSummary> {

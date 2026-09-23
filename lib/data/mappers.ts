@@ -9,6 +9,7 @@ import type {
   Equipment,
   EquipmentStatus,
   Priority,
+  RootCauseAnalysis,
   Unit,
   UnitType,
 } from '@/lib/types/domain';
@@ -17,6 +18,13 @@ function asDateString(value: unknown): string {
   if (value instanceof Date) return value.toISOString().slice(0, 10);
   if (typeof value === 'string') return value.slice(0, 10);
   return '';
+}
+
+function asDateTimeString(value: unknown): string | null {
+  if (value == null) return null;
+  if (value instanceof Date) return value.toISOString().replace('T', ' ').slice(0, 19);
+  if (typeof value === 'string') return value.slice(0, 19).replace('T', ' ');
+  return null;
 }
 
 export function mapArea(row: Record<string, unknown>): Area {
@@ -75,6 +83,21 @@ export function mapActivity(row: Record<string, unknown>): Activity {
     lastUpdate,
     delayed: delayedFlag || waiting,
     openedByUserId: row.opened_by_user_id == null ? null : Number(row.opened_by_user_id),
+    openedAt: asDateTimeString(row.opened_at),
+    closedAt: asDateTimeString(row.closed_at),
+  };
+}
+
+export function mapRca(row: Record<string, unknown>): RootCauseAnalysis {
+  return {
+    id: Number(row.id),
+    activityId: String(row.activity_id),
+    failureMode: row.failure_mode ? String(row.failure_mode) : null,
+    rootCause: row.root_cause ? String(row.root_cause) : null,
+    correctiveAction: row.corrective_action ? String(row.corrective_action) : null,
+    verifiedByUserId: row.verified_by_user_id == null ? null : Number(row.verified_by_user_id),
+    verifiedByName: row.verified_by_name ? String(row.verified_by_name) : null,
+    verifiedAt: asDateTimeString(row.verified_at),
   };
 }
 
