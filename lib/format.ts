@@ -33,3 +33,14 @@ export function labelEquipmentStatus(status: string) {
   };
   return map[status] ?? status;
 }
+
+export function labelWorkOrderStatus(status: string) {
+  const map: Record<string, string> = {
+    planned: 'Planned',
+    released: 'Released',
+    in_progress: 'In Progress',
+    completed: 'Completed',
+    cancelled: 'Cancelled',
+  };
+  return map[status] ?? status;
+}

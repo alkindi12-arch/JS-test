@@ -8,6 +8,7 @@ import {
   mapEquipmentStatusHistory,
   mapRca,
   mapUnit,
+  mapWorkOrder,
   type AttachmentMeta,
 } from '@/lib/data/mappers';
 import type {
@@ -18,6 +19,7 @@ import type {
   EquipmentStatusHistoryEntry,
   RootCauseAnalysis,
   Unit,
+  WorkOrder,
 } from '@/lib/types/domain';
 
 type Row = Record<string, unknown>;
@@ -298,6 +300,49 @@ export async function dbStatusHistoryForEquipment(
     { equipmentId },
   );
   return (rows as Row[]).map(mapEquipmentStatusHistory);
+}
+
+export async function dbWorkOrdersForActivity(activityId: string): Promise<WorkOrder[]> {
+  const [rows] = await getPool().query(
+    `
+    SELECT
+      wo.id,
+      wo.activity_id,
+      wo.external_ref,
+      wo.title,
+      wo.status,
+      wo.planned_start,
+      wo.planned_finish,
+      wo.notes,
+      wo.created_by_user_id,
+      wo.created_at,
+      u.name AS created_by_name
+    FROM work_orders wo
+    LEFT JOIN users u ON u.id = wo.created_by_user_id
+    WHERE wo.activity_id = :activityId
+    ORDER BY wo.created_at DESC, wo.id DESC
+    `,
+    { activityId },
+  );
+  return (rows as Row[]).map(mapWorkOrder);
+}
+
+export async function dbActivitiesByWorkOrderRef(externalRef: string): Promise<Activity[]> {
+  const ref = externalRef.trim();
+  if (!ref) return [];
+  const [rows] = await getPool().query(
+    `
+    ${ACTIVITY_SELECT}
+    WHERE act.id IN (
+      SELECT wo.activity_id FROM work_orders wo
+      WHERE wo.external_ref = :ref
+         OR wo.external_ref LIKE :like
+    )
+    ORDER BY act.start_date DESC, act.id DESC
+    `,
+    { ref, like: `%${ref}%` },
+  );
+  return (rows as Row[]).map(mapActivity);
 }
 
 export type KpiSummary = {

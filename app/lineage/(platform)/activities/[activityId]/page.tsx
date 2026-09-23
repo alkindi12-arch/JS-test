@@ -2,6 +2,7 @@ import { notFound } from 'next/navigation';
 import { Badge, Button, Stack, Surface, Text } from '@/components/design-system';
 import { MarkCompletedButton } from '@/components/domain/MarkCompletedButton';
 import { RcaPanel } from '@/components/domain/RcaPanel';
+import { WorkOrdersPanel } from '@/components/domain/WorkOrdersPanel';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { labelActivityStatus, labelActivityType } from '@/lib/format';
 import {
@@ -10,6 +11,7 @@ import {
   getEquipment,
   getRca,
   updatesForActivity,
+  workOrdersForActivity,
 } from '@/lib/data/plant';
 import styles from './page.module.css';
 
@@ -22,11 +24,12 @@ export default async function ActivityDetailPage({
   const activity = await getActivity(activityId);
   if (!activity) notFound();
 
-  const [eq, updates, attachments, rca] = await Promise.all([
+  const [eq, updates, attachments, rca, workOrders] = await Promise.all([
     getEquipment(activity.equipmentId),
     updatesForActivity(activity.id),
     attachmentsForActivity(activity.id),
     getRca(activity.id),
+    workOrdersForActivity(activity.id),
   ]);
 
   const isClosed = activity.status === 'closed';
@@ -34,6 +37,7 @@ export default async function ActivityDetailPage({
     activity.status !== 'completed' && activity.status !== 'closed';
   const canClose = activity.status === 'completed';
   const canEditRca = !isClosed;
+  const canEditWo = !isClosed;
 
   const startedLabel = activity.openedAt
     ? `Opened ${activity.openedAt}`
@@ -77,6 +81,11 @@ export default async function ActivityDetailPage({
         </Badge>
         <Badge>{activity.team}</Badge>
         {activity.delayed ? <Badge tone="danger">Delayed</Badge> : null}
+        {workOrders.map((wo) => (
+          <Badge key={wo.id} tone="ok">
+            {wo.externalRef}
+          </Badge>
+        ))}
       </div>
 
       <div className={styles.split}>
@@ -113,6 +122,14 @@ export default async function ActivityDetailPage({
                 </ol>
               )}
             </Stack>
+          </Surface>
+
+          <Surface pad={5} className="animate-fade-up stagger-2">
+            <WorkOrdersPanel
+              activityId={activity.id}
+              workOrders={workOrders}
+              canEdit={canEditWo}
+            />
           </Surface>
 
           <Surface pad={5} className="animate-fade-up stagger-2">

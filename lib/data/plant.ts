@@ -16,6 +16,7 @@ import type {
   EquipmentStatusHistoryEntry,
   RootCauseAnalysis,
   Unit,
+  WorkOrder,
 } from '@/lib/types/domain';
 
 export type DataSource = 'mysql' | 'mock';
@@ -173,6 +174,36 @@ export async function statusHistoryForEquipment(
     ];
   }
   return db.dbStatusHistoryForEquipment(equipmentId);
+}
+
+export async function workOrdersForActivity(activityId: string): Promise<WorkOrder[]> {
+  if (!isDatabaseConfigured()) {
+    if (activityId !== 'ACT-1042') return [];
+    return [
+      {
+        id: 1,
+        activityId,
+        externalRef: 'WO-DEMO-1042',
+        title: 'Bearing replacement package',
+        status: 'released',
+        plannedStart: '2026-09-18',
+        plannedFinish: '2026-09-22',
+        notes: 'Mock CMMS work order',
+        createdByUserId: null,
+        createdByName: 'Mock Supervisor',
+        createdAt: '2026-09-18 09:00:00',
+      },
+    ];
+  }
+  return db.dbWorkOrdersForActivity(activityId);
+}
+
+export async function activitiesByWorkOrderRef(externalRef: string): Promise<Activity[]> {
+  if (!isDatabaseConfigured()) {
+    if (!externalRef.trim()) return mock.activities;
+    return mock.activities.filter((a) => a.id === 'ACT-1042');
+  }
+  return db.dbActivitiesByWorkOrderRef(externalRef);
 }
 
 export async function getKpiSummary(): Promise<KpiSummary> {

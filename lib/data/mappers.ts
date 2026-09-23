@@ -13,6 +13,8 @@ import type {
   RootCauseAnalysis,
   Unit,
   UnitType,
+  WorkOrder,
+  WorkOrderStatus,
 } from '@/lib/types/domain';
 
 function asDateString(value: unknown): string {
@@ -119,6 +121,23 @@ export function mapRca(row: Record<string, unknown>): RootCauseAnalysis {
     verifiedByUserId: row.verified_by_user_id == null ? null : Number(row.verified_by_user_id),
     verifiedByName: row.verified_by_name ? String(row.verified_by_name) : null,
     verifiedAt: asDateTimeString(row.verified_at),
+  };
+}
+
+export function mapWorkOrder(row: Record<string, unknown>): WorkOrder {
+  return {
+    id: Number(row.id),
+    activityId: String(row.activity_id),
+    externalRef: String(row.external_ref),
+    title: row.title ? String(row.title) : null,
+    status: String(row.status) as WorkOrderStatus,
+    plannedStart: row.planned_start ? asDateString(row.planned_start) : null,
+    plannedFinish: row.planned_finish ? asDateString(row.planned_finish) : null,
+    notes: row.notes ? String(row.notes) : null,
+    createdByUserId:
+      row.created_by_user_id == null ? null : Number(row.created_by_user_id),
+    createdByName: row.created_by_name ? String(row.created_by_name) : null,
+    createdAt: asDateTimeString(row.created_at),
   };
 }
 

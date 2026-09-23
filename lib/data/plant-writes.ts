@@ -13,6 +13,7 @@ import type {
   EquipmentStatus,
   Priority,
 } from '@/lib/types/domain';
+import type { WorkOrderStatus } from '@/lib/types/domain';
 
 export type ActionState = {
   ok: boolean;
@@ -44,6 +45,13 @@ const TYPES = new Set(['breakdown', 'pm', 'inspection', 'routine', 'project']);
 const PRIORITIES = new Set(['low', 'medium', 'high', 'emergency']);
 const CONDITIONS = new Set(['improved', 'unchanged', 'worsened']);
 const EQUIPMENT_STATUSES = new Set(['running', 'standby', 'offline', 'maintenance']);
+const WO_STATUSES = new Set([
+  'planned',
+  'released',
+  'in_progress',
+  'completed',
+  'cancelled',
+]);
 const ACTIVE_ACTIVITY_STATUSES = `('open', 'in_progress', 'waiting_parts')`;
 
 async function resolveTeam(teamIdRaw: string): Promise<{ id: number; discipline: Discipline } | null> {
@@ -620,4 +628,103 @@ export async function setEquipmentStatusAction(
   revalidatePath(lineagePath('/dashboard'));
 
   redirect(lineagePath(`/equipment/${equipmentId}`));
+}
+
+export async function attachWorkOrderAction(
+  _prev: ActionState,
+  form: FormData,
+): Promise<ActionState> {
+  const blocked = requireDb();
+  if (blocked) return blocked;
+
+  const session = await getSession();
+  const activityId = str(form, 'activityId');
+  const externalRef = str(form, 'externalRef');
+  const title = str(form, 'title') || null;
+  const status = str(form, 'status') || 'planned';
+  const plannedStart = str(form, 'plannedStart') || null;
+  const plannedFinish = str(form, 'plannedFinish') || null;
+  const notes = str(form, 'notes') || null;
+
+  if (!activityId) return { ok: false, error: 'Activity id missing.' };
+  if (!externalRef) return { ok: false, error: 'External WO reference is required.' };
+  if (externalRef.length > 64) return { ok: false, error: 'WO reference is too long.' };
+  if (!WO_STATUSES.has(status)) return { ok: false, error: 'Invalid work order status.' };
+
+  const pool = getPool();
+  const [actRows] = await pool.query(
+    `SELECT id, equipment_id FROM activities WHERE id = :id LIMIT 1`,
+    { id: activityId },
+  );
+  const activity = (actRows as Array<{ id: string; equipment_id: string }>)[0];
+  if (!activity) return { ok: false, error: 'Activity not found.' };
+
+  try {
+    await pool.query(
+      `
+      INSERT INTO work_orders (
+        activity_id, external_ref, title, status,
+        planned_start, planned_finish, notes, created_by_user_id
+      ) VALUES (
+        :activityId, :externalRef, :title, :status,
+        :plannedStart, :plannedFinish, :notes, :userId
+      )
+      `,
+      {
+        activityId,
+        externalRef,
+        title,
+        status: status as WorkOrderStatus,
+        plannedStart,
+        plannedFinish,
+        notes,
+        userId: session?.id ?? null,
+      },
+    );
+  } catch (err) {
+    const code = (err as { code?: string }).code;
+    if (code === 'ER_DUP_ENTRY') {
+      return { ok: false, error: 'That WO reference is already linked.' };
+    }
+    throw err;
+  }
+
+  revalidatePath(lineagePath('/activities'));
+  revalidatePath(lineagePath(`/activities/${activityId}`));
+  revalidatePath(lineagePath('/dashboard'));
+
+  redirect(lineagePath(`/activities/${activityId}`));
+}
+
+export async function updateWorkOrderStatusAction(
+  _prev: ActionState,
+  form: FormData,
+): Promise<ActionState> {
+  const blocked = requireDb();
+  if (blocked) return blocked;
+
+  const workOrderId = Number(str(form, 'workOrderId'));
+  const status = str(form, 'status');
+  const activityId = str(form, 'activityId');
+
+  if (!workOrderId) return { ok: false, error: 'Work order id missing.' };
+  if (!WO_STATUSES.has(status)) return { ok: false, error: 'Invalid work order status.' };
+  if (!activityId) return { ok: false, error: 'Activity id missing.' };
+
+  const pool = getPool();
+  const [result] = await pool.query(
+    `
+    UPDATE work_orders
+    SET status = :status
+    WHERE id = :id AND activity_id = :activityId
+    `,
+    { id: workOrderId, status, activityId },
+  );
+  const affected = Number((result as { affectedRows?: number }).affectedRows ?? 0);
+  if (!affected) return { ok: false, error: 'Work order not found.' };
+
+  revalidatePath(lineagePath(`/activities/${activityId}`));
+  revalidatePath(lineagePath('/activities'));
+
+  redirect(lineagePath(`/activities/${activityId}`));
 }

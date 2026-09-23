@@ -90,6 +90,27 @@ export interface RootCauseAnalysis {
   verifiedAt?: string | null;
 }
 
+export type WorkOrderStatus =
+  | 'planned'
+  | 'released'
+  | 'in_progress'
+  | 'completed'
+  | 'cancelled';
+
+export interface WorkOrder {
+  id: number;
+  activityId: string;
+  externalRef: string;
+  title?: string | null;
+  status: WorkOrderStatus;
+  plannedStart?: string | null;
+  plannedFinish?: string | null;
+  notes?: string | null;
+  createdByUserId?: number | null;
+  createdByName?: string | null;
+  createdAt?: string | null;
+}
+
 export interface DailyUpdate {
   id: string;
   activityId: string;
