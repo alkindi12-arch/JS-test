@@ -1,0 +1,32 @@
+.formBlock {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.fields {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin-top: var(--space-1);
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--color-ink-soft);
+}
+
+.field input,
+.field select {
+  font-weight: 400;
+  color: var(--color-ink);
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-md);
+  background: var(--color-paper-elevated);
+  padding: 0.7rem 0.85rem;
+  min-height: 44px;
+}

@@ -49,6 +49,19 @@ export interface Equipment {
   model?: string;
 }
 
+export interface EquipmentStatusHistoryEntry {
+  id: number;
+  equipmentId: string;
+  status: EquipmentStatus;
+  previousStatus?: EquipmentStatus | null;
+  reason?: string | null;
+  notes?: string | null;
+  activityId?: string | null;
+  changedByUserId?: number | null;
+  changedByName?: string | null;
+  changedAt: string;
+}
+
 export interface Activity {
   id: string;
   equipmentId: string;

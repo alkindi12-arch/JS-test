@@ -6,7 +6,13 @@ import { redirect } from 'next/navigation';
 import { getSession } from '@/lib/auth/session';
 import { isDatabaseConfigured, getPool } from '@/lib/db/mysql';
 import { lineagePath } from '@/lib/lineage/paths';
-import type { ActivityStatus, ActivityType, Discipline, Priority } from '@/lib/types/domain';
+import type {
+  ActivityStatus,
+  ActivityType,
+  Discipline,
+  EquipmentStatus,
+  Priority,
+} from '@/lib/types/domain';
 
 export type ActionState = {
   ok: boolean;
@@ -37,6 +43,8 @@ function newUpdateId(activityId: string): string {
 const TYPES = new Set(['breakdown', 'pm', 'inspection', 'routine', 'project']);
 const PRIORITIES = new Set(['low', 'medium', 'high', 'emergency']);
 const CONDITIONS = new Set(['improved', 'unchanged', 'worsened']);
+const EQUIPMENT_STATUSES = new Set(['running', 'standby', 'offline', 'maintenance']);
+const ACTIVE_ACTIVITY_STATUSES = `('open', 'in_progress', 'waiting_parts')`;
 
 async function resolveTeam(teamIdRaw: string): Promise<{ id: number; discipline: Discipline } | null> {
   const teamId = Number(teamIdRaw);
@@ -48,6 +56,87 @@ async function resolveTeam(teamIdRaw: string): Promise<{ id: number; discipline:
   const row = (rows as Array<{ id: number; discipline: string }>)[0];
   if (!row) return null;
   return { id: Number(row.id), discipline: row.discipline as Discipline };
+}
+
+async function setEquipmentStatus(opts: {
+  equipmentId: string;
+  nextStatus: EquipmentStatus;
+  reason: string;
+  notes?: string | null;
+  activityId?: string | null;
+  userId?: number | null;
+}): Promise<boolean> {
+  const pool = getPool();
+  const [rows] = await pool.query(
+    `SELECT id, status FROM equipment WHERE id = :id LIMIT 1`,
+    { id: opts.equipmentId },
+  );
+  const eq = (rows as Array<{ id: string; status: EquipmentStatus }>)[0];
+  if (!eq) return false;
+  if (eq.status === opts.nextStatus) return false;
+
+  await pool.query(
+    `UPDATE equipment SET status = :status WHERE id = :id`,
+    { id: opts.equipmentId, status: opts.nextStatus },
+  );
+
+  await pool.query(
+    `
+    INSERT INTO equipment_status_history (
+      equipment_id, status, previous_status, reason, notes,
+      activity_id, changed_by_user_id, changed_at
+    ) VALUES (
+      :equipmentId, :status, :previousStatus, :reason, :notes,
+      :activityId, :userId, NOW()
+    )
+    `,
+    {
+      equipmentId: opts.equipmentId,
+      status: opts.nextStatus,
+      previousStatus: eq.status,
+      reason: opts.reason,
+      notes: opts.notes ?? null,
+      activityId: opts.activityId ?? null,
+      userId: opts.userId ?? null,
+    },
+  );
+
+  return true;
+}
+
+async function maybeReleaseEquipment(
+  equipmentId: string,
+  activityId: string,
+  userId: number | null,
+): Promise<void> {
+  const pool = getPool();
+  const [rows] = await pool.query(
+    `
+    SELECT COUNT(*) AS n FROM activities
+    WHERE equipment_id = :equipmentId
+      AND status IN ${ACTIVE_ACTIVITY_STATUSES}
+      AND id <> :activityId
+    `,
+    { equipmentId, activityId },
+  );
+  const activeOthers = Number((rows as Array<{ n: number }>)[0]?.n ?? 0);
+  if (activeOthers > 0) return;
+
+  const [eqRows] = await pool.query(
+    `SELECT status FROM equipment WHERE id = :id LIMIT 1`,
+    { id: equipmentId },
+  );
+  const current = (eqRows as Array<{ status: EquipmentStatus }>)[0]?.status;
+  if (current !== 'maintenance' && current !== 'offline') return;
+
+  await setEquipmentStatus({
+    equipmentId,
+    nextStatus: 'running',
+    reason: 'activity_closed',
+    notes: `Released after ${activityId}`,
+    activityId,
+    userId,
+  });
 }
 
 export async function createActivityAction(
@@ -132,6 +221,18 @@ export async function createActivityAction(
         notes: description,
       },
     );
+  }
+
+  // Breakdown / active work moves equipment into maintenance when opening
+  if (type === 'breakdown' || type === 'pm' || type === 'project') {
+    await setEquipmentStatus({
+      equipmentId,
+      nextStatus: 'maintenance',
+      reason: 'activity_opened',
+      notes: `Opened ${id}: ${title}`,
+      activityId: id,
+      userId: session?.id ?? null,
+    });
   }
 
   revalidatePath(lineagePath('/dashboard'));
@@ -224,6 +325,14 @@ export async function addDailyUpdateAction(
         id: activityId,
       },
     );
+
+    if (nextStatus === 'completed') {
+      await maybeReleaseEquipment(
+        activity.equipment_id,
+        activityId,
+        session?.id ?? null,
+      );
+    }
   }
 
   revalidatePath(lineagePath('/dashboard'));
@@ -281,6 +390,12 @@ export async function markActivityCompletedAction(activityId: string): Promise<A
       userId: session?.id ?? null,
       notes: 'Marked completed.',
     },
+  );
+
+  await maybeReleaseEquipment(
+    activity.equipment_id,
+    activityId,
+    session?.id ?? null,
   );
 
   revalidatePath(lineagePath('/dashboard'));
@@ -456,10 +571,53 @@ export async function closeActivityAction(
     },
   );
 
+  await maybeReleaseEquipment(
+    activity.equipment_id,
+    activityId,
+    session?.id ?? null,
+  );
+
   revalidatePath(lineagePath('/dashboard'));
   revalidatePath(lineagePath('/activities'));
   revalidatePath(lineagePath(`/activities/${activityId}`));
   revalidatePath(lineagePath(`/equipment/${activity.equipment_id}`));
 
   redirect(lineagePath(`/activities/${activityId}`));
+}
+
+export async function setEquipmentStatusAction(
+  _prev: ActionState,
+  form: FormData,
+): Promise<ActionState> {
+  const blocked = requireDb();
+  if (blocked) return blocked;
+
+  const session = await getSession();
+  const equipmentId = str(form, 'equipmentId');
+  const nextStatus = str(form, 'status');
+  const notes = str(form, 'notes') || null;
+
+  if (!equipmentId) return { ok: false, error: 'Equipment id missing.' };
+  if (!EQUIPMENT_STATUSES.has(nextStatus)) {
+    return { ok: false, error: 'Invalid equipment status.' };
+  }
+
+  const changed = await setEquipmentStatus({
+    equipmentId,
+    nextStatus: nextStatus as EquipmentStatus,
+    reason: 'manual',
+    notes,
+    activityId: null,
+    userId: session?.id ?? null,
+  });
+
+  if (!changed) {
+    return { ok: false, error: 'Status is already set to that value.' };
+  }
+
+  revalidatePath(lineagePath('/equipment'));
+  revalidatePath(lineagePath(`/equipment/${equipmentId}`));
+  revalidatePath(lineagePath('/dashboard'));
+
+  redirect(lineagePath(`/equipment/${equipmentId}`));
 }

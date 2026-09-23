@@ -13,6 +13,7 @@ import type {
   Area,
   DailyUpdate,
   Equipment,
+  EquipmentStatusHistoryEntry,
   RootCauseAnalysis,
   Unit,
 } from '@/lib/types/domain';
@@ -148,6 +149,30 @@ export async function getRca(activityId: string): Promise<RootCauseAnalysis | nu
     };
   }
   return db.dbGetRca(activityId);
+}
+
+export async function statusHistoryForEquipment(
+  equipmentId: string,
+): Promise<EquipmentStatusHistoryEntry[]> {
+  if (!isDatabaseConfigured()) {
+    const eq = mock.getEquipment(equipmentId);
+    if (!eq) return [];
+    return [
+      {
+        id: 1,
+        equipmentId,
+        status: eq.status,
+        previousStatus: null,
+        reason: 'baseline',
+        notes: 'Mock baseline status',
+        activityId: null,
+        changedByUserId: null,
+        changedByName: null,
+        changedAt: '2026-09-01 08:00:00',
+      },
+    ];
+  }
+  return db.dbStatusHistoryForEquipment(equipmentId);
 }
 
 export async function getKpiSummary(): Promise<KpiSummary> {

@@ -8,6 +8,7 @@ import type {
   Discipline,
   Equipment,
   EquipmentStatus,
+  EquipmentStatusHistoryEntry,
   Priority,
   RootCauseAnalysis,
   Unit,
@@ -85,6 +86,26 @@ export function mapActivity(row: Record<string, unknown>): Activity {
     openedByUserId: row.opened_by_user_id == null ? null : Number(row.opened_by_user_id),
     openedAt: asDateTimeString(row.opened_at),
     closedAt: asDateTimeString(row.closed_at),
+  };
+}
+
+export function mapEquipmentStatusHistory(
+  row: Record<string, unknown>,
+): EquipmentStatusHistoryEntry {
+  return {
+    id: Number(row.id),
+    equipmentId: String(row.equipment_id),
+    status: String(row.status) as EquipmentStatus,
+    previousStatus: row.previous_status
+      ? (String(row.previous_status) as EquipmentStatus)
+      : null,
+    reason: row.reason ? String(row.reason) : null,
+    notes: row.notes ? String(row.notes) : null,
+    activityId: row.activity_id ? String(row.activity_id) : null,
+    changedByUserId:
+      row.changed_by_user_id == null ? null : Number(row.changed_by_user_id),
+    changedByName: row.changed_by_name ? String(row.changed_by_name) : null,
+    changedAt: asDateTimeString(row.changed_at) ?? '',
   };
 }
 

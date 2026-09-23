@@ -5,6 +5,7 @@ import {
   mapAttachment,
   mapDailyUpdate,
   mapEquipment,
+  mapEquipmentStatusHistory,
   mapRca,
   mapUnit,
   type AttachmentMeta,
@@ -14,6 +15,7 @@ import type {
   Area,
   DailyUpdate,
   Equipment,
+  EquipmentStatusHistoryEntry,
   RootCauseAnalysis,
   Unit,
 } from '@/lib/types/domain';
@@ -270,6 +272,32 @@ export async function dbGetRca(activityId: string): Promise<RootCauseAnalysis | 
   );
   const list = rows as Row[];
   return list[0] ? mapRca(list[0]) : null;
+}
+
+export async function dbStatusHistoryForEquipment(
+  equipmentId: string,
+): Promise<EquipmentStatusHistoryEntry[]> {
+  const [rows] = await getPool().query(
+    `
+    SELECT
+      h.id,
+      h.equipment_id,
+      h.status,
+      h.previous_status,
+      h.reason,
+      h.notes,
+      h.activity_id,
+      h.changed_by_user_id,
+      h.changed_at,
+      u.name AS changed_by_name
+    FROM equipment_status_history h
+    LEFT JOIN users u ON u.id = h.changed_by_user_id
+    WHERE h.equipment_id = :equipmentId
+    ORDER BY h.changed_at DESC, h.id DESC
+    `,
+    { equipmentId },
+  );
+  return (rows as Row[]).map(mapEquipmentStatusHistory);
 }
 
 export type KpiSummary = {

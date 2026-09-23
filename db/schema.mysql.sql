@@ -132,6 +132,27 @@ CREATE TABLE IF NOT EXISTS root_cause_analysis (
     ON UPDATE CASCADE ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+CREATE TABLE IF NOT EXISTS equipment_status_history (
+  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  equipment_id VARCHAR(64) NOT NULL,
+  status ENUM('running', 'standby', 'offline', 'maintenance') NOT NULL,
+  previous_status ENUM('running', 'standby', 'offline', 'maintenance') NULL,
+  reason VARCHAR(255) NULL,
+  notes TEXT NULL,
+  activity_id VARCHAR(64) NULL,
+  changed_by_user_id INT UNSIGNED NULL,
+  changed_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  KEY idx_esh_equipment (equipment_id, changed_at),
+  KEY idx_esh_activity (activity_id),
+  CONSTRAINT fk_esh_equipment FOREIGN KEY (equipment_id) REFERENCES equipment (id)
+    ON UPDATE CASCADE ON DELETE CASCADE,
+  CONSTRAINT fk_esh_activity FOREIGN KEY (activity_id) REFERENCES activities (id)
+    ON UPDATE CASCADE ON DELETE SET NULL,
+  CONSTRAINT fk_esh_user FOREIGN KEY (changed_by_user_id) REFERENCES users (id)
+    ON UPDATE CASCADE ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE IF NOT EXISTS daily_updates (
   id VARCHAR(64) PRIMARY KEY,
   activity_id VARCHAR(64) NOT NULL,
