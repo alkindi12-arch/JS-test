@@ -243,10 +243,20 @@ export async function dbUpdatesForActivity(activityId: string): Promise<DailyUpd
 export async function dbAttachmentsForActivity(activityId: string): Promise<AttachmentMeta[]> {
   const [rows] = await getPool().query(
     `
-    SELECT id, activity_id, file_name, file_type, file_url
-    FROM attachments
-    WHERE activity_id = :activityId
-    ORDER BY uploaded_at ASC
+    SELECT
+      a.id,
+      a.activity_id,
+      a.file_name,
+      a.file_type,
+      a.file_size,
+      a.file_url,
+      a.uploaded_by,
+      a.uploaded_at,
+      u.name AS uploader_name
+    FROM attachments a
+    LEFT JOIN users u ON u.id = a.uploaded_by_user_id
+    WHERE a.activity_id = :activityId
+    ORDER BY a.uploaded_at ASC
     `,
     { activityId },
   );

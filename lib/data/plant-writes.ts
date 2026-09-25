@@ -6,6 +6,7 @@ import { redirect } from 'next/navigation';
 import { getSession } from '@/lib/auth/session';
 import { isDatabaseConfigured, getPool } from '@/lib/db/mysql';
 import { lineagePath } from '@/lib/lineage/paths';
+import { saveUploadedFile } from '@/lib/uploads/storage';
 import type {
   ActivityStatus,
   ActivityType,
@@ -39,6 +40,10 @@ function newActivityId(): string {
 
 function newUpdateId(activityId: string): string {
   return `UPD-${activityId}-${randomBytes(2).toString('hex').toUpperCase()}`;
+}
+
+function newAttachmentId(activityId: string): string {
+  return `ATT-${activityId}-${randomBytes(2).toString('hex').toUpperCase()}`;
 }
 
 const TYPES = new Set(['breakdown', 'pm', 'inspection', 'routine', 'project']);
@@ -725,6 +730,63 @@ export async function updateWorkOrderStatusAction(
 
   revalidatePath(lineagePath(`/activities/${activityId}`));
   revalidatePath(lineagePath('/activities'));
+
+  redirect(lineagePath(`/activities/${activityId}`));
+}
+
+export async function uploadAttachmentAction(
+  _prev: ActionState,
+  form: FormData,
+): Promise<ActionState> {
+  const blocked = requireDb();
+  if (blocked) return blocked;
+
+  const session = await getSession();
+  const activityId = str(form, 'activityId');
+  const file = form.get('file');
+
+  if (!activityId) return { ok: false, error: 'Activity id missing.' };
+  if (!(file instanceof File)) return { ok: false, error: 'Choose a file to upload.' };
+
+  const pool = getPool();
+  const [actRows] = await pool.query(
+    `SELECT id, equipment_id, status FROM activities WHERE id = :id LIMIT 1`,
+    { id: activityId },
+  );
+  const activity = (actRows as Array<{ id: string; equipment_id: string; status: string }>)[0];
+  if (!activity) return { ok: false, error: 'Activity not found.' };
+  if (activity.status === 'closed') {
+    return { ok: false, error: 'Cannot attach files to a closed activity.' };
+  }
+
+  const saved = await saveUploadedFile({ activityId, file });
+  if (!saved.ok) return { ok: false, error: saved.error };
+
+  const originalName = file.name.slice(0, 255) || saved.storedName;
+  await pool.query(
+    `
+    INSERT INTO attachments (
+      id, activity_id, update_id, file_name, file_type, file_size,
+      file_url, uploaded_by, uploaded_by_user_id
+    ) VALUES (
+      :id, :activityId, NULL, :fileName, :fileType, :fileSize,
+      :fileUrl, :uploadedBy, :userId
+    )
+    `,
+    {
+      id: newAttachmentId(activityId),
+      activityId,
+      fileName: originalName,
+      fileType: file.type || 'application/octet-stream',
+      fileSize: saved.bytes,
+      fileUrl: saved.relativeUrl,
+      uploadedBy: session?.name ?? 'Operator',
+      userId: session?.id ?? null,
+    },
+  );
+
+  revalidatePath(lineagePath(`/activities/${activityId}`));
+  revalidatePath(lineagePath(`/equipment/${activity.equipment_id}`));
 
   redirect(lineagePath(`/activities/${activityId}`));
 }

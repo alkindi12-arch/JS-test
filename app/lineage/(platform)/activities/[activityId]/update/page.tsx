@@ -78,7 +78,7 @@ export default async function AddUpdatePage({
             </select>
           </label>
           <Text size="xs" tone="faint">
-            File uploads will land in a later phase — notes save now.
+            Attach files from the activity detail page after posting notes.
           </Text>
           <div className={styles.actionsRow}>
             <Button variant="secondary" href={`/lineage/activities/${activityId}`}>

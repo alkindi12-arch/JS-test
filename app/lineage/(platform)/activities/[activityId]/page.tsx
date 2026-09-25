@@ -1,5 +1,6 @@
 import { notFound } from 'next/navigation';
 import { Badge, Button, Stack, Surface, Text } from '@/components/design-system';
+import { AttachmentsPanel } from '@/components/domain/AttachmentsPanel';
 import { MarkCompletedButton } from '@/components/domain/MarkCompletedButton';
 import { RcaPanel } from '@/components/domain/RcaPanel';
 import { WorkOrdersPanel } from '@/components/domain/WorkOrdersPanel';
@@ -38,6 +39,7 @@ export default async function ActivityDetailPage({
   const canClose = activity.status === 'completed';
   const canEditRca = !isClosed;
   const canEditWo = !isClosed;
+  const canUpload = !isClosed;
 
   const startedLabel = activity.openedAt
     ? `Opened ${activity.openedAt}`
@@ -144,20 +146,11 @@ export default async function ActivityDetailPage({
 
         <Surface pad={5} className={`animate-fade-up stagger-2 ${styles.side}`}>
           <Stack gap={4}>
-            <Text as="h2" display size="lg">
-              Attachments
-            </Text>
-            {attachments.length === 0 ? (
-              <Text size="sm" tone="mute">
-                No files linked yet.
-              </Text>
-            ) : (
-              <ul className={styles.files}>
-                {attachments.map((f) => (
-                  <li key={f.id}>{f.fileName}</li>
-                ))}
-              </ul>
-            )}
+            <AttachmentsPanel
+              activityId={activity.id}
+              attachments={attachments}
+              canUpload={canUpload}
+            />
             <Text as="h2" display size="lg">
               Next status
             </Text>

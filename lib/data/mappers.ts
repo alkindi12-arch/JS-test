@@ -164,6 +164,9 @@ export type AttachmentMeta = {
   fileName: string;
   fileType: string;
   fileUrl: string;
+  fileSize?: number | null;
+  uploadedBy?: string | null;
+  uploadedAt?: string | null;
 };
 
 export function mapAttachment(row: Record<string, unknown>): AttachmentMeta {
@@ -173,5 +176,10 @@ export function mapAttachment(row: Record<string, unknown>): AttachmentMeta {
     fileName: String(row.file_name),
     fileType: String(row.file_type),
     fileUrl: String(row.file_url),
+    fileSize: row.file_size == null ? null : Number(row.file_size),
+    uploadedBy:
+      (row.uploader_name ? String(row.uploader_name) : null) ||
+      (row.uploaded_by ? String(row.uploaded_by) : null),
+    uploadedAt: asDateTimeString(row.uploaded_at),
   };
 }
