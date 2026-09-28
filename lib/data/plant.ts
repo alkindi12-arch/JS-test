@@ -7,6 +7,10 @@ import { isDatabaseConfigured } from '@/lib/db/mysql';
 import type { AttachmentMeta } from '@/lib/data/mappers';
 import * as db from '@/lib/data/plant-db';
 import type { KpiSummary } from '@/lib/data/plant-db';
+import type {
+  ActivityReportPack,
+  ReportListItem,
+} from '@/lib/data/plant-db';
 import * as mock from '@/lib/mock/plant';
 import type {
   Activity,
@@ -18,6 +22,8 @@ import type {
   Unit,
   WorkOrder,
 } from '@/lib/types/domain';
+
+export type { ActivityReportPack, ReportListItem, KpiSummary };
 
 export type DataSource = 'mysql' | 'mock';
 
@@ -209,4 +215,60 @@ export async function activitiesByWorkOrderRef(externalRef: string): Promise<Act
 export async function getKpiSummary(): Promise<KpiSummary> {
   if (!isDatabaseConfigured()) return mock.kpiSummary;
   return db.dbKpiSummary();
+}
+
+export async function listReportableActivities(): Promise<ReportListItem[]> {
+  if (!isDatabaseConfigured()) {
+    return mock.activities
+      .filter((a) => a.status === 'completed' || a.status === 'closed')
+      .map((a) => {
+        const eq = mock.getEquipment(a.equipmentId);
+        const unit = eq ? mock.getUnit(eq.unitId) : undefined;
+        const area = unit ? mock.getArea(unit.areaId) : undefined;
+        return {
+          activityId: a.id,
+          title: a.title,
+          status: a.status,
+          type: a.type,
+          priority: a.priority,
+          equipmentTag: eq?.tagNumber ?? a.equipmentId,
+          equipmentId: a.equipmentId,
+          unitId: unit?.id ?? '',
+          areaId: area?.id ?? '',
+          areaName: area?.name ?? '',
+          startDate: a.startDate,
+          closedAt: a.closedAt ?? null,
+          hasRca: a.id === 'ACT-1042',
+          workOrderCount: a.id === 'ACT-1042' ? 1 : 0,
+        };
+      });
+  }
+  return db.dbListReportableActivities();
+}
+
+export async function getActivityReportPack(
+  activityId: string,
+): Promise<ActivityReportPack | null> {
+  if (!isDatabaseConfigured()) {
+    const activity = mock.getActivity(activityId);
+    if (!activity) return null;
+    const equipment = mock.getEquipment(activity.equipmentId);
+    if (!equipment) return null;
+    const unit = mock.getUnit(equipment.unitId);
+    const area = unit ? mock.getArea(unit.areaId) : undefined;
+    return {
+      activity,
+      equipment,
+      unitName: unit?.name ?? '',
+      unitId: unit?.id ?? '',
+      areaName: area?.name ?? '',
+      areaId: area?.id ?? '',
+      updates: await updatesForActivity(activityId),
+      attachments: await attachmentsForActivity(activityId),
+      rca: await getRca(activityId),
+      workOrders: await workOrdersForActivity(activityId),
+      durationDays: 4,
+    };
+  }
+  return db.dbGetActivityReportPack(activityId);
 }

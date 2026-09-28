@@ -360,7 +360,11 @@ export type KpiSummary = {
   criticalTasks: number;
   delayedTasks: number;
   completedToday: number;
+  openWorkOrders: number;
+  equipmentMaintenance: number;
+  closedThisWeek: number;
   byDiscipline: Array<{ team: string; count: number }>;
+  byEquipmentStatus: Array<{ status: string; count: number }>;
 };
 
 export async function dbKpiSummary(): Promise<KpiSummary> {
@@ -372,7 +376,15 @@ export async function dbKpiSummary(): Promise<KpiSummary> {
     return Number(first?.n ?? 0);
   }
 
-  const [activeTasks, criticalTasks, delayedTasks, completedToday] = await Promise.all([
+  const [
+    activeTasks,
+    criticalTasks,
+    delayedTasks,
+    completedToday,
+    openWorkOrders,
+    equipmentMaintenance,
+    closedThisWeek,
+  ] = await Promise.all([
     count(`SELECT COUNT(*) AS n FROM activities WHERE status IN ${ACTIVE_STATUSES}`),
     count(
       `SELECT COUNT(*) AS n FROM activities
@@ -401,6 +413,18 @@ export async function dbKpiSummary(): Promise<KpiSummary> {
         AND DATE(COALESCE(closed_at, updated_at)) = CURDATE()
       `,
     ),
+    count(
+      `SELECT COUNT(*) AS n FROM work_orders
+       WHERE status IN ('planned', 'released', 'in_progress')`,
+    ),
+    count(`SELECT COUNT(*) AS n FROM equipment WHERE status = 'maintenance'`),
+    count(
+      `
+      SELECT COUNT(*) AS n FROM activities
+      WHERE status = 'closed'
+        AND COALESCE(closed_at, updated_at) >= DATE_SUB(CURDATE(), INTERVAL 7 DAY)
+      `,
+    ),
   ]);
 
   const [disciplineRows] = await pool.query(
@@ -414,14 +438,177 @@ export async function dbKpiSummary(): Promise<KpiSummary> {
     `,
   );
 
+  const [eqStatusRows] = await pool.query(
+    `
+    SELECT status, COUNT(*) AS count
+    FROM equipment
+    GROUP BY status
+    ORDER BY count DESC
+    `,
+  );
+
   return {
     activeTasks,
     criticalTasks,
     delayedTasks,
     completedToday,
+    openWorkOrders,
+    equipmentMaintenance,
+    closedThisWeek,
     byDiscipline: (disciplineRows as Row[]).map((r) => ({
       team: String(r.team),
       count: Number(r.count),
     })),
+    byEquipmentStatus: (eqStatusRows as Row[]).map((r) => ({
+      status: String(r.status),
+      count: Number(r.count),
+    })),
+  };
+}
+
+export type ReportListItem = {
+  activityId: string;
+  title: string;
+  status: string;
+  type: string;
+  priority: string;
+  equipmentTag: string;
+  equipmentId: string;
+  unitId: string;
+  areaId: string;
+  areaName: string;
+  startDate: string;
+  closedAt: string | null;
+  hasRca: boolean;
+  workOrderCount: number;
+};
+
+export async function dbListReportableActivities(): Promise<ReportListItem[]> {
+  const [rows] = await getPool().query(
+    `
+    SELECT
+      act.id AS activity_id,
+      act.title,
+      act.status,
+      act.activity_type,
+      act.priority,
+      act.start_date,
+      act.closed_at,
+      e.id AS equipment_id,
+      e.tag_number,
+      u.id AS unit_id,
+      a.id AS area_id,
+      a.name AS area_name,
+      EXISTS(
+        SELECT 1 FROM root_cause_analysis rca WHERE rca.activity_id = act.id
+      ) AS has_rca,
+      (SELECT COUNT(*) FROM work_orders wo WHERE wo.activity_id = act.id) AS wo_count
+    FROM activities act
+    JOIN equipment e ON e.id = act.equipment_id
+    JOIN units u ON u.id = e.unit_id
+    JOIN areas a ON a.id = u.area_id
+    WHERE act.status IN ('completed', 'closed')
+    ORDER BY COALESCE(act.closed_at, act.updated_at) DESC, act.id DESC
+    LIMIT 100
+    `,
+  );
+
+  return (rows as Row[]).map((r) => ({
+    activityId: String(r.activity_id),
+    title: String(r.title),
+    status: String(r.status),
+    type: String(r.activity_type),
+    priority: String(r.priority),
+    equipmentTag: String(r.tag_number),
+    equipmentId: String(r.equipment_id),
+    unitId: String(r.unit_id),
+    areaId: String(r.area_id),
+    areaName: String(r.area_name),
+    startDate: asDateStringLocal(r.start_date),
+    closedAt: r.closed_at ? asDateTimeStringLocal(r.closed_at) : null,
+    hasRca: Number(r.has_rca) === 1,
+    workOrderCount: Number(r.wo_count ?? 0),
+  }));
+}
+
+function asDateStringLocal(value: unknown): string {
+  if (value instanceof Date) return value.toISOString().slice(0, 10);
+  if (typeof value === 'string') return value.slice(0, 10);
+  return '';
+}
+
+function asDateTimeStringLocal(value: unknown): string | null {
+  if (value == null) return null;
+  if (value instanceof Date) return value.toISOString().replace('T', ' ').slice(0, 19);
+  if (typeof value === 'string') return value.slice(0, 19).replace('T', ' ');
+  return null;
+}
+
+export type ActivityReportPack = {
+  activity: Activity;
+  equipment: Equipment;
+  unitName: string;
+  unitId: string;
+  areaName: string;
+  areaId: string;
+  updates: DailyUpdate[];
+  attachments: AttachmentMeta[];
+  rca: RootCauseAnalysis | null;
+  workOrders: WorkOrder[];
+  durationDays: number | null;
+};
+
+export async function dbGetActivityReportPack(
+  activityId: string,
+): Promise<ActivityReportPack | null> {
+  const activity = await dbGetActivity(activityId);
+  if (!activity) return null;
+  const equipment = await dbGetEquipment(activity.equipmentId);
+  if (!equipment) return null;
+
+  const [unitRows] = await getPool().query(
+    `
+    SELECT u.id AS unit_id, u.name AS unit_name, a.id AS area_id, a.name AS area_name
+    FROM units u
+    JOIN areas a ON a.id = u.area_id
+    WHERE u.id = :unitId
+    LIMIT 1
+    `,
+    { unitId: equipment.unitId },
+  );
+  const unit = (unitRows as Row[])[0];
+  if (!unit) return null;
+
+  const [updates, attachments, rca, workOrders] = await Promise.all([
+    dbUpdatesForActivity(activityId),
+    dbAttachmentsForActivity(activityId),
+    dbGetRca(activityId),
+    dbWorkOrdersForActivity(activityId),
+  ]);
+
+  let durationDays: number | null = null;
+  if (activity.startDate) {
+    const start = new Date(activity.startDate);
+    const end = activity.closedAt ? new Date(activity.closedAt) : new Date();
+    if (!Number.isNaN(start.getTime()) && !Number.isNaN(end.getTime())) {
+      durationDays = Math.max(
+        0,
+        Math.round((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)),
+      );
+    }
+  }
+
+  return {
+    activity,
+    equipment,
+    unitName: String(unit.unit_name),
+    unitId: String(unit.unit_id),
+    areaName: String(unit.area_name),
+    areaId: String(unit.area_id),
+    updates,
+    attachments,
+    rca,
+    workOrders,
+    durationDays,
   };
 }

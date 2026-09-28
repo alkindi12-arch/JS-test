@@ -8,6 +8,8 @@ import {
 } from '@/components/design-system';
 import { ActivityRow } from '@/components/domain/ActivityRow';
 import { PageHeader } from '@/components/layout/PageHeader';
+import { getSessionCapabilities } from '@/lib/auth/permissions';
+import { labelEquipmentStatus } from '@/lib/format';
 import {
   getDataSource,
   getKpiSummary,
@@ -18,16 +20,18 @@ import {
 import styles from './page.module.css';
 
 export default async function DashboardPage() {
-  const [areas, activities, equipment, kpiSummary, source] = await Promise.all([
+  const [areas, activities, equipment, kpiSummary, source, caps] = await Promise.all([
     listAreas(),
     listActivities(),
     listEquipment(),
     getKpiSummary(),
     getDataSource(),
+    getSessionCapabilities(),
   ]);
   const recent = activities.filter((a) => a.status !== 'closed').slice(0, 4);
   const tagMap = Object.fromEntries(equipment.map((e) => [e.id, e.tagNumber]));
   const maxDiscipline = Math.max(1, ...kpiSummary.byDiscipline.map((d) => d.count));
+  const maxEqStatus = Math.max(1, ...kpiSummary.byEquipmentStatus.map((d) => d.count));
 
   return (
     <Stack gap={8}>
@@ -37,16 +41,22 @@ export default async function DashboardPage() {
         description="Track work from area down to the daily activity timeline — one hierarchy, every screen size."
         actions={
           <>
+            <Button href="/lineage/reports" variant="secondary">
+              Reports
+            </Button>
             <Button href="/lineage/activities" variant="secondary">
               View activities
             </Button>
-            <Button href="/lineage/activities/new">New activity</Button>
+            {caps.canCreate ? (
+              <Button href="/lineage/activities/new">New activity</Button>
+            ) : null}
           </>
         }
       />
 
       <Text size="xs" tone="faint">
         Data source: {source === 'mysql' ? 'Hostinger MySQL' : 'local mock'}
+        {caps.session ? ` · ${caps.session.role}` : ''}
       </Text>
 
       <section className={`animate-fade-up stagger-1 ${styles.kpiSection}`} aria-label="Key metrics">
@@ -75,6 +85,36 @@ export default async function DashboardPage() {
               label="Completed today"
               value={kpiSummary.completedToday}
               tone="ok"
+            />
+          </Surface>
+          <Surface pad={5}>
+            <KpiMetric
+              label="Open work orders"
+              value={kpiSummary.openWorkOrders}
+              hint="Planned / released / in progress"
+            />
+          </Surface>
+          <Surface pad={5}>
+            <KpiMetric
+              label="Under maintenance"
+              value={kpiSummary.equipmentMaintenance}
+              tone="signal"
+              hint="Equipment status"
+            />
+          </Surface>
+          <Surface pad={5}>
+            <KpiMetric
+              label="Closed (7 days)"
+              value={kpiSummary.closedThisWeek}
+              tone="ok"
+              hint="Final history"
+            />
+          </Surface>
+          <Surface pad={5} href="/lineage/reports">
+            <KpiMetric
+              label="Reports"
+              value={kpiSummary.closedThisWeek + kpiSummary.completedToday}
+              hint="Open report pack library"
             />
           </Surface>
         </Grid>
@@ -121,38 +161,72 @@ export default async function DashboardPage() {
         </Stack>
       </section>
 
-      <section className="animate-fade-up stagger-3" aria-label="Discipline load">
-        <Surface pad={5}>
-          <Stack gap={4}>
-            <Text as="h2" display size="xl">
-              Work by discipline
-            </Text>
-            {kpiSummary.byDiscipline.length === 0 ? (
-              <Text size="sm" tone="mute">
-                No active activities yet.
+      <section className="animate-fade-up stagger-3" aria-label="Load charts">
+        <Grid columns={2} gap={4}>
+          <Surface pad={5}>
+            <Stack gap={4}>
+              <Text as="h2" display size="xl">
+                Work by discipline
               </Text>
-            ) : (
-              <div className={styles.disciplineBars}>
-                {kpiSummary.byDiscipline.map((d) => (
-                  <div key={d.team} className={styles.disciplineRow}>
-                    <Text size="sm" weight="medium">
-                      {d.team}
-                    </Text>
-                    <div className={styles.barTrack} aria-hidden>
-                      <div
-                        className={styles.barFill}
-                        style={{ width: `${(d.count / maxDiscipline) * 100}%` }}
-                      />
+              {kpiSummary.byDiscipline.length === 0 ? (
+                <Text size="sm" tone="mute">
+                  No active activities yet.
+                </Text>
+              ) : (
+                <div className={styles.disciplineBars}>
+                  {kpiSummary.byDiscipline.map((d) => (
+                    <div key={d.team} className={styles.disciplineRow}>
+                      <Text size="sm" weight="medium">
+                        {d.team}
+                      </Text>
+                      <div className={styles.barTrack} aria-hidden>
+                        <div
+                          className={styles.barFill}
+                          style={{ width: `${(d.count / maxDiscipline) * 100}%` }}
+                        />
+                      </div>
+                      <Text size="sm" mono tone="mute">
+                        {d.count}
+                      </Text>
                     </div>
-                    <Text size="sm" mono tone="mute">
-                      {d.count}
-                    </Text>
-                  </div>
-                ))}
-              </div>
-            )}
-          </Stack>
-        </Surface>
+                  ))}
+                </div>
+              )}
+            </Stack>
+          </Surface>
+
+          <Surface pad={5}>
+            <Stack gap={4}>
+              <Text as="h2" display size="xl">
+                Equipment status
+              </Text>
+              {kpiSummary.byEquipmentStatus.length === 0 ? (
+                <Text size="sm" tone="mute">
+                  No equipment loaded.
+                </Text>
+              ) : (
+                <div className={styles.disciplineBars}>
+                  {kpiSummary.byEquipmentStatus.map((d) => (
+                    <div key={d.status} className={styles.disciplineRowWide}>
+                      <Text size="sm" weight="medium">
+                        {labelEquipmentStatus(d.status)}
+                      </Text>
+                      <div className={styles.barTrack} aria-hidden>
+                        <div
+                          className={styles.barFillAlt}
+                          style={{ width: `${(d.count / maxEqStatus) * 100}%` }}
+                        />
+                      </div>
+                      <Text size="sm" mono tone="mute">
+                        {d.count}
+                      </Text>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </Stack>
+          </Surface>
+        </Grid>
       </section>
 
       <section className="animate-fade-up stagger-4" aria-label="Open activities">
@@ -162,7 +236,7 @@ export default async function DashboardPage() {
               Open activity stream
             </Text>
             <Text size="sm" tone="mute">
-              Drill into any item for the daily progress timeline.
+              Drill into any item for the daily progress timeline. Filter by WO on Activities.
             </Text>
             <div className={styles.stream}>
               {recent.map((activity) => (

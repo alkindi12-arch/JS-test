@@ -124,12 +124,12 @@ export function AppShell({
 
   return (
     <div className={styles.shell}>
-      <aside className={styles.sidebar} aria-label="Application sidebar">
+      <aside className={styles.sidebar} aria-label="Application sidebar" data-print-hide>
         {nav}
       </aside>
 
       {mobileOpen ? (
-        <div className={styles.drawerRoot}>
+        <div className={styles.drawerRoot} data-print-hide>
           <button
             type="button"
             className={styles.backdrop}
@@ -151,7 +151,7 @@ export function AppShell({
       ) : null}
 
       <div className={styles.mainColumn}>
-        <header className={styles.topbar}>
+        <header className={styles.topbar} data-print-hide>
           <button
             type="button"
             className={styles.menuBtn}
@@ -185,7 +185,7 @@ export function AppShell({
         </main>
       </div>
 
-      <nav className={styles.bottomNav} aria-label="Mobile primary">
+      <nav className={styles.bottomNav} aria-label="Mobile primary" data-print-hide>
         {primaryNav.slice(0, 4).map((item) => (
           <Link
             key={item.href}

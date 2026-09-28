@@ -176,12 +176,20 @@ export const kpiSummary = {
   criticalTasks: 4,
   delayedTasks: 6,
   completedToday: 3,
+  openWorkOrders: 2,
+  equipmentMaintenance: 1,
+  closedThisWeek: 2,
   byDiscipline: [
     { team: 'Rotating', count: 9 },
     { team: 'Electrical', count: 4 },
     { team: 'Instrument', count: 5 },
     { team: 'Static', count: 4 },
     { team: 'Ops', count: 3 },
+  ],
+  byEquipmentStatus: [
+    { status: 'running', count: 2 },
+    { status: 'maintenance', count: 1 },
+    { status: 'standby', count: 1 },
   ],
 };
 

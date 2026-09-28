@@ -84,3 +84,17 @@ ol {
   scrollbar-width: thin;
   scrollbar-color: var(--color-line-strong) transparent;
 }
+
+@media print {
+  [data-print-hide] {
+    display: none !important;
+  }
+
+  body {
+    background: white;
+  }
+
+  .atmosphere-grid {
+    background: none !important;
+  }
+}
