@@ -1,7 +1,9 @@
 import { notFound } from 'next/navigation';
 import { Button, Grid, KpiMetric, Stack, Surface, Text } from '@/components/design-system';
+import { ActionForm } from '@/components/domain/ActionForm';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { getSessionCapabilities } from '@/lib/auth/permissions';
+import { deleteAreaAction } from '@/lib/data/hierarchy-writes';
 import { getArea, unitsForArea } from '@/lib/data/plant';
 
 export default async function AreaDetailPage({
@@ -13,6 +15,7 @@ export default async function AreaDetailPage({
   const [area, caps] = await Promise.all([getArea(areaId), getSessionCapabilities()]);
   if (!area) notFound();
   const units = await unitsForArea(area.id);
+  const canDelete = caps.canAdmin && area.unitCount === 0;
 
   return (
     <Stack gap={6}>
@@ -77,6 +80,38 @@ export default async function AreaDetailPage({
           ) : null}
         </Stack>
       </section>
+
+      {caps.canAdmin ? (
+        <Surface pad={5} className="animate-fade-up stagger-3">
+          <Stack gap={3}>
+            <Text as="h2" display size="lg">
+              Remove area
+            </Text>
+            <Text size="sm" tone="mute">
+              {canDelete
+                ? 'Permanently delete this area. This cannot be undone.'
+                : `Delete blocked — remove ${area.unitCount} unit(s) first (and their equipment).`}
+            </Text>
+            {canDelete ? (
+              <ActionForm
+                action={deleteAreaAction}
+                submitLabel="Delete area"
+                submitVariant="danger"
+                pendingLabel="Deleting…"
+              >
+                <input type="hidden" name="id" value={area.id} />
+              </ActionForm>
+            ) : (
+              <Button
+                variant="secondary"
+                href={`/lineage/areas/${area.id}/edit`}
+              >
+                Open edit to manage
+              </Button>
+            )}
+          </Stack>
+        </Surface>
+      ) : null}
     </Stack>
   );
 }

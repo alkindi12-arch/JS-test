@@ -66,17 +66,20 @@ export default async function EditAreaPage({
 
         <div className={formStyles.dangerZone}>
           <Stack gap={3}>
+            <Text display size="lg">
+              Delete area
+            </Text>
             <Text size="sm" tone="mute">
               {canDelete
-                ? 'Remove this area. This cannot be undone.'
-                : `Remove blocked — ${area.unitCount} unit(s) still assigned.`}
+                ? 'Permanently delete this area. This cannot be undone.'
+                : `Delete blocked — ${area.unitCount} unit(s) still assigned. Remove units (and their equipment) first.`}
             </Text>
             {canDelete ? (
               <ActionForm
                 action={deleteAreaAction}
-                submitLabel="Remove area"
+                submitLabel="Delete area"
                 submitVariant="danger"
-                pendingLabel="Removing…"
+                pendingLabel="Deleting…"
               >
                 <input type="hidden" name="id" value={area.id} />
               </ActionForm>
