@@ -28,3 +28,4 @@ yarn-error.log*
 # uploaded attachments
 /public/uploads/*
 !/public/uploads/.gitkeep
+.env.local
