@@ -1,4 +1,4 @@
-import { mkdir, readdir, stat, writeFile } from 'fs/promises';
+import { mkdir, readdir, stat, unlink, writeFile } from 'fs/promises';
 import path from 'path';
 import { randomBytes } from 'crypto';
 
@@ -107,4 +107,22 @@ export async function saveUploadedFile(opts: {
     storedName,
     bytes,
   };
+}
+
+/** Remove a file previously saved under /uploads/… (ignores missing / non-upload paths). */
+export async function deleteUploadedFile(relativeUrl: string): Promise<void> {
+  if (!relativeUrl || relativeUrl === '#' || !relativeUrl.startsWith('/uploads/')) {
+    return;
+  }
+  const absPath = path.join(process.cwd(), 'public', relativeUrl);
+  const resolved = path.resolve(absPath);
+  if (!resolved.startsWith(path.resolve(UPLOAD_ROOT) + path.sep)) {
+    return;
+  }
+  try {
+    await unlink(resolved);
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code !== 'ENOENT') throw err;
+  }
 }

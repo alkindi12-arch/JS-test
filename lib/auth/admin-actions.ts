@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { hashPassword } from '@/lib/auth/password';
 import { requirePermission } from '@/lib/auth/permissions';
+import { ROTATING_TEAM_ID } from '@/lib/auth/rotating';
 import { getPool, isDatabaseConfigured } from '@/lib/db/mysql';
 import { lineagePath } from '@/lib/lineage/paths';
 
@@ -36,14 +37,6 @@ async function roleExists(roleId: number): Promise<boolean> {
   return (rows as Array<{ id: number }>).length > 0;
 }
 
-async function teamExists(teamId: number): Promise<boolean> {
-  const [rows] = await getPool().query(
-    `SELECT id FROM teams WHERE id = :id LIMIT 1`,
-    { id: teamId },
-  );
-  return (rows as Array<{ id: number }>).length > 0;
-}
-
 export async function createUserAction(
   _prev: AdminActionState,
   form: FormData,
@@ -59,8 +52,7 @@ export async function createUserAction(
   const phone = str(form, 'phone') || null;
   const password = String(form.get('password') ?? '');
   const roleId = Number(str(form, 'roleId'));
-  const teamRaw = str(form, 'teamId');
-  const teamId = teamRaw === '' ? null : Number(teamRaw);
+  const teamId = ROTATING_TEAM_ID;
 
   if (!name) return { ok: false, error: 'Name is required.' };
   if (!email || !isValidEmail(email)) return { ok: false, error: 'Valid email is required.' };
@@ -69,9 +61,6 @@ export async function createUserAction(
   }
   if (!roleId || !(await roleExists(roleId))) {
     return { ok: false, error: 'Select a valid role.' };
-  }
-  if (teamId != null && !(await teamExists(teamId))) {
-    return { ok: false, error: 'Select a valid team.' };
   }
 
   const passwordHash = await hashPassword(password);
@@ -112,8 +101,7 @@ export async function updateUserAction(
   const phone = str(form, 'phone') || null;
   const password = String(form.get('password') ?? '');
   const roleId = Number(str(form, 'roleId'));
-  const teamRaw = str(form, 'teamId');
-  const teamId = teamRaw === '' ? null : Number(teamRaw);
+  const teamId = ROTATING_TEAM_ID;
   const isActive = str(form, 'isActive') === '1';
 
   if (!userId) return { ok: false, error: 'User id missing.' };
@@ -124,9 +112,6 @@ export async function updateUserAction(
   }
   if (!roleId || !(await roleExists(roleId))) {
     return { ok: false, error: 'Select a valid role.' };
-  }
-  if (teamId != null && !(await teamExists(teamId))) {
-    return { ok: false, error: 'Select a valid team.' };
   }
 
   // Prevent self lock-out: cannot deactivate or demote own admin account away from Admin
@@ -252,6 +237,47 @@ export async function reactivateUserAction(
   const [result] = await getPool().query(
     `UPDATE users SET is_active = 1 WHERE id = :id`,
     { id: userId },
+  );
+  const affected = Number((result as { affectedRows?: number }).affectedRows ?? 0);
+  if (!affected) return { ok: false, error: 'User not found.' };
+
+  revalidatePath(lineagePath('/admin'));
+  revalidatePath(lineagePath(`/admin/users/${userId}`));
+  redirect(lineagePath('/admin'));
+}
+
+export async function assignRoleAction(
+  _prev: AdminActionState,
+  form: FormData,
+): Promise<AdminActionState> {
+  const blocked = requireDb();
+  if (blocked) return blocked;
+
+  const auth = await requirePermission('admin');
+  if (!auth.ok) return auth;
+  const { session } = auth;
+
+  const userId = Number(str(form, 'userId'));
+  const roleId = Number(str(form, 'roleId'));
+  if (!userId) return { ok: false, error: 'User id missing.' };
+  if (!roleId || !(await roleExists(roleId))) {
+    return { ok: false, error: 'Select a valid role.' };
+  }
+
+  if (userId === session.id) {
+    const [roleRows] = await getPool().query(
+      `SELECT name FROM roles WHERE id = :id LIMIT 1`,
+      { id: roleId },
+    );
+    const roleName = (roleRows as Array<{ name: string }>)[0]?.name;
+    if (roleName !== 'Admin') {
+      return { ok: false, error: 'You cannot remove Admin from your own account.' };
+    }
+  }
+
+  const [result] = await getPool().query(
+    `UPDATE users SET role_id = :roleId, team_id = :teamId WHERE id = :id`,
+    { id: userId, roleId, teamId: ROTATING_TEAM_ID },
   );
   const affected = Number((result as { affectedRows?: number }).affectedRows ?? 0);
   if (!affected) return { ok: false, error: 'User not found.' };

@@ -3,7 +3,10 @@
 import { ActionForm } from '@/components/domain/ActionForm';
 import { Text } from '@/components/design-system';
 import type { AttachmentMeta } from '@/lib/data/mappers';
-import { uploadAttachmentAction } from '@/lib/data/plant-writes';
+import {
+  deleteAttachmentAction,
+  uploadAttachmentAction,
+} from '@/lib/data/plant-writes';
 import styles from './AttachmentsPanel.module.css';
 
 function formatBytes(n: number | null | undefined) {
@@ -21,11 +24,15 @@ export function AttachmentsPanel({
   activityId,
   attachments,
   canUpload,
+  canDelete,
 }: {
   activityId: string;
   attachments: AttachmentMeta[];
   canUpload: boolean;
+  canDelete?: boolean;
 }) {
+  const allowDelete = canDelete ?? canUpload;
+
   return (
     <div className={styles.panel}>
       <Text as="h2" display size="lg">
@@ -47,7 +54,12 @@ export function AttachmentsPanel({
             return (
               <li key={f.id} className={styles.fileItem}>
                 {isRealUrl(f.fileUrl) ? (
-                  <a href={f.fileUrl} target="_blank" rel="noopener noreferrer" className={styles.link}>
+                  <a
+                    href={f.fileUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className={styles.link}
+                  >
                     {f.fileName}
                   </a>
                 ) : (
@@ -64,6 +76,18 @@ export function AttachmentsPanel({
                   <Text size="xs" tone="faint">
                     Seed placeholder (no file on disk)
                   </Text>
+                ) : null}
+                {allowDelete ? (
+                  <ActionForm
+                    action={deleteAttachmentAction}
+                    submitLabel="Remove file"
+                    submitVariant="danger"
+                    pendingLabel="Removing…"
+                    className={styles.deleteForm}
+                  >
+                    <input type="hidden" name="attachmentId" value={f.id} />
+                    <input type="hidden" name="activityId" value={activityId} />
+                  </ActionForm>
                 ) : null}
               </li>
             );

@@ -25,6 +25,8 @@ import type {
 type Row = Record<string, unknown>;
 
 const ACTIVE_STATUSES = `('open', 'in_progress', 'waiting_parts')`;
+/** Soft-deleted activities are hidden from lists, KPIs, and reports. */
+const NOT_DELETED = `act.deleted_at IS NULL`;
 
 export async function dbListAreas(): Promise<Area[]> {
   const [rows] = await getPool().query(`
@@ -39,6 +41,7 @@ export async function dbListAreas(): Promise<Area[]> {
         JOIN equipment e ON e.id = act.equipment_id
         JOIN units u ON u.id = e.unit_id
         WHERE u.area_id = a.id
+          AND ${NOT_DELETED}
           AND act.status IN ${ACTIVE_STATUSES}
       ) AS active_issues,
       (
@@ -47,6 +50,7 @@ export async function dbListAreas(): Promise<Area[]> {
         JOIN equipment e ON e.id = act.equipment_id
         JOIN units u ON u.id = e.unit_id
         WHERE u.area_id = a.id
+          AND ${NOT_DELETED}
           AND act.status IN ${ACTIVE_STATUSES}
           AND act.priority IN ('high', 'emergency')
       ) AS critical_alerts
@@ -76,6 +80,7 @@ export async function dbUnitsForArea(areaId: string): Promise<Unit[]> {
         FROM activities act
         JOIN equipment e ON e.id = act.equipment_id
         WHERE e.unit_id = u.id
+          AND ${NOT_DELETED}
           AND act.status IN ${ACTIVE_STATUSES}
       ) AS active_activities
     FROM units u
@@ -102,6 +107,7 @@ export async function dbGetUnit(id: string): Promise<Unit | null> {
         FROM activities act
         JOIN equipment e ON e.id = act.equipment_id
         WHERE e.unit_id = u.id
+          AND ${NOT_DELETED}
           AND act.status IN ${ACTIVE_STATUSES}
       ) AS active_activities
     FROM units u
@@ -129,6 +135,7 @@ export async function dbListUnits(): Promise<Unit[]> {
         FROM activities act
         JOIN equipment e ON e.id = act.equipment_id
         WHERE e.unit_id = u.id
+          AND ${NOT_DELETED}
           AND act.status IN ${ACTIVE_STATUSES}
       ) AS active_activities
     FROM units u
@@ -214,6 +221,7 @@ const ACTIVITY_SELECT = `
 export async function dbListActivities(): Promise<Activity[]> {
   const [rows] = await getPool().query(`
     ${ACTIVITY_SELECT}
+    WHERE ${NOT_DELETED}
     ORDER BY act.start_date DESC, act.id DESC
   `);
   return (rows as Row[]).map(mapActivity);
@@ -223,7 +231,7 @@ export async function dbGetActivity(id: string): Promise<Activity | null> {
   const [rows] = await getPool().query(
     `
     ${ACTIVITY_SELECT}
-    WHERE act.id = :id
+    WHERE act.id = :id AND ${NOT_DELETED}
     LIMIT 1
     `,
     { id },
@@ -236,7 +244,7 @@ export async function dbActivitiesForEquipment(equipmentId: string): Promise<Act
   const [rows] = await getPool().query(
     `
     ${ACTIVITY_SELECT}
-    WHERE act.equipment_id = :equipmentId
+    WHERE act.equipment_id = :equipmentId AND ${NOT_DELETED}
     ORDER BY act.start_date DESC, act.id DESC
     `,
     { equipmentId },
@@ -253,6 +261,8 @@ export async function dbUpdatesForActivity(activityId: string): Promise<DailyUpd
       du.update_date,
       du.author,
       du.progress_notes,
+      du.findings,
+      du.condition_check,
       du.progress_pct,
       du.created_at,
       u.name AS user_name
@@ -369,7 +379,8 @@ export async function dbActivitiesByWorkOrderRef(externalRef: string): Promise<A
   const [rows] = await getPool().query(
     `
     ${ACTIVITY_SELECT}
-    WHERE act.id IN (
+    WHERE ${NOT_DELETED}
+      AND act.id IN (
       SELECT wo.activity_id FROM work_orders wo
       WHERE wo.external_ref = :ref
          OR wo.external_ref LIKE :like
@@ -411,15 +422,20 @@ export async function dbKpiSummary(): Promise<KpiSummary> {
     equipmentMaintenance,
     closedThisWeek,
   ] = await Promise.all([
-    count(`SELECT COUNT(*) AS n FROM activities WHERE status IN ${ACTIVE_STATUSES}`),
     count(
-      `SELECT COUNT(*) AS n FROM activities
-       WHERE status IN ${ACTIVE_STATUSES} AND priority IN ('high', 'emergency')`,
+      `SELECT COUNT(*) AS n FROM activities act
+       WHERE ${NOT_DELETED} AND act.status IN ${ACTIVE_STATUSES}`,
+    ),
+    count(
+      `SELECT COUNT(*) AS n FROM activities act
+       WHERE ${NOT_DELETED} AND act.status IN ${ACTIVE_STATUSES}
+         AND act.priority IN ('high', 'emergency')`,
     ),
     count(
       `
       SELECT COUNT(*) AS n FROM activities act
-      WHERE act.status IN ${ACTIVE_STATUSES}
+      WHERE ${NOT_DELETED}
+        AND act.status IN ${ACTIVE_STATUSES}
         AND (
           act.status = 'waiting_parts'
           OR DATEDIFF(
@@ -434,9 +450,10 @@ export async function dbKpiSummary(): Promise<KpiSummary> {
     ),
     count(
       `
-      SELECT COUNT(*) AS n FROM activities
-      WHERE status IN ('completed', 'closed')
-        AND DATE(COALESCE(closed_at, updated_at)) = CURDATE()
+      SELECT COUNT(*) AS n FROM activities act
+      WHERE ${NOT_DELETED}
+        AND act.status IN ('completed', 'closed')
+        AND DATE(COALESCE(act.closed_at, act.updated_at)) = CURDATE()
       `,
     ),
     count(
@@ -446,9 +463,10 @@ export async function dbKpiSummary(): Promise<KpiSummary> {
     count(`SELECT COUNT(*) AS n FROM equipment WHERE status = 'maintenance'`),
     count(
       `
-      SELECT COUNT(*) AS n FROM activities
-      WHERE status = 'closed'
-        AND COALESCE(closed_at, updated_at) >= DATE_SUB(CURDATE(), INTERVAL 7 DAY)
+      SELECT COUNT(*) AS n FROM activities act
+      WHERE ${NOT_DELETED}
+        AND act.status = 'closed'
+        AND COALESCE(act.closed_at, act.updated_at) >= DATE_SUB(CURDATE(), INTERVAL 7 DAY)
       `,
     ),
   ]);
@@ -458,7 +476,7 @@ export async function dbKpiSummary(): Promise<KpiSummary> {
     SELECT COALESCE(t.name, act.assigned_team) AS team, COUNT(*) AS count
     FROM activities act
     LEFT JOIN teams t ON t.id = act.assigned_team_id
-    WHERE act.status IN ${ACTIVE_STATUSES}
+    WHERE ${NOT_DELETED} AND act.status IN ${ACTIVE_STATUSES}
     GROUP BY COALESCE(t.name, act.assigned_team)
     ORDER BY count DESC
     `,
@@ -533,7 +551,8 @@ export async function dbListReportableActivities(): Promise<ReportListItem[]> {
     JOIN equipment e ON e.id = act.equipment_id
     JOIN units u ON u.id = e.unit_id
     JOIN areas a ON a.id = u.area_id
-    WHERE act.status IN ('completed', 'closed')
+    WHERE ${NOT_DELETED}
+      AND act.status IN ('completed', 'closed')
     ORDER BY COALESCE(act.closed_at, act.updated_at) DESC, act.id DESC
     LIMIT 100
     `,

@@ -48,7 +48,7 @@ export function ActivityRow({ activity, tag }: { activity: Activity; tag?: strin
           {activity.title}
         </Text>
         <Text size="sm" tone="mute">
-          {labelActivityType(activity.type)} · {activity.team} · Updated {activity.lastUpdate}
+          {labelActivityType(activity.type)} · Updated {activity.lastUpdate}
         </Text>
       </div>
       <div className={styles.meta}>

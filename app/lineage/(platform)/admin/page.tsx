@@ -1,8 +1,9 @@
 import { Button, Stack, Surface, Text } from '@/components/design-system';
+import { AssignRoleForm } from '@/components/domain/AssignRoleForm';
 import { PageHeader } from '@/components/layout/PageHeader';
 import formStyles from '@/components/domain/EntityForm.module.css';
 import { getSessionCapabilities } from '@/lib/auth/permissions';
-import { listRoles, listTeams, listUsers } from '@/lib/auth/users';
+import { listRoles, listUsers } from '@/lib/auth/users';
 import { redirect } from 'next/navigation';
 
 export default async function AdminPage() {
@@ -11,22 +12,17 @@ export default async function AdminPage() {
     redirect('/lineage/dashboard');
   }
 
-  const [roles, users, teams] = await Promise.all([
-    listRoles(),
-    listUsers(),
-    listTeams(),
-  ]);
+  const [roles, users] = await Promise.all([listRoles(), listUsers()]);
+  const selfId = caps.session?.id;
 
   return (
     <Stack gap={6}>
       <PageHeader
         eyebrow="Administration"
         title="Admin"
-        description="Manage users, roles, and plant access."
+        description="Manage users and allocate roles for the Rotating crew."
         breadcrumbs={[{ label: 'Dashboard', href: '/lineage/dashboard' }, { label: 'Admin' }]}
-        actions={
-          <Button href="/lineage/admin/users/new">Add user</Button>
-        }
+        actions={<Button href="/lineage/admin/users/new">Add user</Button>}
       />
 
       <Surface pad={5} className="animate-fade-up">
@@ -35,7 +31,7 @@ export default async function AdminPage() {
             Users
           </Text>
           <Text size="sm" tone="mute">
-            Add, edit, or deactivate accounts. Deactivated users cannot sign in.
+            Add, edit, or deactivate accounts. Assign roles inline — everyone is Rotating.
           </Text>
           {users.length === 0 ? (
             <Text size="sm" tone="mute">
@@ -48,7 +44,6 @@ export default async function AdminPage() {
                   <th>Name</th>
                   <th>Email</th>
                   <th>Role</th>
-                  <th>Team</th>
                   <th>Status</th>
                   <th />
                 </tr>
@@ -58,8 +53,14 @@ export default async function AdminPage() {
                   <tr key={u.id}>
                     <td>{u.name}</td>
                     <td className={formStyles.mono}>{u.email}</td>
-                    <td>{u.roleName}</td>
-                    <td>{u.teamName ?? '—'}</td>
+                    <td>
+                      <AssignRoleForm
+                        userId={u.id}
+                        roleId={u.roleId}
+                        roles={roles}
+                        disabled={u.id === selfId}
+                      />
+                    </td>
                     <td>{u.isActive ? 'Active' : 'Inactive'}</td>
                     <td>
                       <Button size="sm" variant="secondary" href={`/lineage/admin/users/${u.id}`}>
@@ -91,17 +92,6 @@ export default async function AdminPage() {
               </li>
             ))}
           </ul>
-        </Stack>
-      </Surface>
-
-      <Surface pad={5} className="animate-fade-up stagger-2">
-        <Stack gap={3}>
-          <Text display size="xl">
-            Teams
-          </Text>
-          <Text size="sm" tone="mute">
-            {teams.map((t) => t.name).join(' · ')}
-          </Text>
         </Stack>
       </Surface>
     </Stack>

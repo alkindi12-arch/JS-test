@@ -153,8 +153,11 @@ export function mapDailyUpdate(row: Record<string, unknown>): DailyUpdate {
     id: String(row.id),
     activityId: String(row.activity_id),
     date: created ? `${date} · ${created}` : date,
+    updateDate: date,
     author,
     notes: String(row.progress_notes),
+    findings: row.findings ? String(row.findings) : null,
+    conditionCheck: row.condition_check ? String(row.condition_check) : null,
     progressPct: row.progress_pct == null ? null : Number(row.progress_pct),
   };
 }

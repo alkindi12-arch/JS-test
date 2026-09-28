@@ -5,20 +5,20 @@ import formStyles from '@/components/domain/EntityForm.module.css';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { createUserAction } from '@/lib/auth/admin-actions';
 import { getSessionCapabilities } from '@/lib/auth/permissions';
-import { listRoles, listTeams } from '@/lib/auth/users';
+import { listRoles } from '@/lib/auth/users';
 
 export default async function NewUserPage() {
   const caps = await getSessionCapabilities();
   if (!caps.canAdmin) redirect('/lineage/dashboard');
 
-  const [roles, teams] = await Promise.all([listRoles(), listTeams()]);
+  const roles = await listRoles();
 
   return (
     <Stack gap={6}>
       <PageHeader
         eyebrow="Administration"
         title="Add user"
-        description="Create a Lineage account with role and optional team."
+        description="Create a Lineage account with a role. All users are Rotating."
         breadcrumbs={[
           { label: 'Admin', href: '/lineage/admin' },
           { label: 'Add user' },
@@ -61,31 +61,18 @@ export default async function NewUserPage() {
               placeholder="At least 8 characters"
             />
           </label>
-          <div className={formStyles.row}>
-            <label className={formStyles.field}>
-              <span>Role</span>
-              <select name="roleId" required defaultValue="3">
-                {roles.map((r) => (
-                  <option key={r.id} value={r.id}>
-                    {r.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className={formStyles.field}>
-              <span>Team</span>
-              <select name="teamId" defaultValue="">
-                <option value="">None</option>
-                {teams.map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-          </div>
+          <label className={formStyles.field}>
+            <span>Role</span>
+            <select name="roleId" required defaultValue="3">
+              {roles.map((r) => (
+                <option key={r.id} value={r.id}>
+                  {r.name}
+                </option>
+              ))}
+            </select>
+          </label>
           <Text size="sm" tone="mute">
-            User can sign in immediately after creation.
+            User can sign in immediately. Team is always Rotating.
           </Text>
           <div className={formStyles.actionsRow}>
             <Button variant="secondary" href="/lineage/admin">

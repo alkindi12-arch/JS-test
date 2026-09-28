@@ -116,8 +116,12 @@ export interface DailyUpdate {
   id: string;
   activityId: string;
   date: string;
+  /** ISO date (YYYY-MM-DD) for edit forms */
+  updateDate: string;
   author: string;
   notes: string;
+  findings?: string | null;
+  conditionCheck?: string | null;
   progressPct?: number | null;
 }
 

@@ -4,6 +4,7 @@ import { ActionForm } from '@/components/domain/ActionForm';
 import { Badge, Text } from '@/components/design-system';
 import {
   attachWorkOrderAction,
+  deleteWorkOrderAction,
   updateWorkOrderStatusAction,
 } from '@/lib/data/plant-writes';
 import { labelWorkOrderStatus } from '@/lib/format';
@@ -55,24 +56,36 @@ export function WorkOrdersPanel({
                 </Text>
               )}
               {canEdit ? (
-                <ActionForm
-                  action={updateWorkOrderStatusAction}
-                  submitLabel="Update"
-                  className={styles.statusForm}
-                >
-                  <input type="hidden" name="workOrderId" value={wo.id} />
-                  <input type="hidden" name="activityId" value={activityId} />
-                  <label className={styles.fieldInline}>
-                    <span className={styles.srOnly}>Status</span>
-                    <select name="status" defaultValue={wo.status}>
-                      <option value="planned">Planned</option>
-                      <option value="released">Released</option>
-                      <option value="in_progress">In Progress</option>
-                      <option value="completed">Completed</option>
-                      <option value="cancelled">Cancelled</option>
-                    </select>
-                  </label>
-                </ActionForm>
+                <div className={styles.itemActions}>
+                  <ActionForm
+                    action={updateWorkOrderStatusAction}
+                    submitLabel="Update"
+                    className={styles.statusForm}
+                  >
+                    <input type="hidden" name="workOrderId" value={wo.id} />
+                    <input type="hidden" name="activityId" value={activityId} />
+                    <label className={styles.fieldInline}>
+                      <span className={styles.srOnly}>Status</span>
+                      <select name="status" defaultValue={wo.status}>
+                        <option value="planned">Planned</option>
+                        <option value="released">Released</option>
+                        <option value="in_progress">In Progress</option>
+                        <option value="completed">Completed</option>
+                        <option value="cancelled">Cancelled</option>
+                      </select>
+                    </label>
+                  </ActionForm>
+                  <ActionForm
+                    action={deleteWorkOrderAction}
+                    submitLabel="Remove"
+                    submitVariant="danger"
+                    pendingLabel="Removing…"
+                    className={styles.statusForm}
+                  >
+                    <input type="hidden" name="workOrderId" value={wo.id} />
+                    <input type="hidden" name="activityId" value={activityId} />
+                  </ActionForm>
+                </div>
               ) : null}
             </li>
           ))}

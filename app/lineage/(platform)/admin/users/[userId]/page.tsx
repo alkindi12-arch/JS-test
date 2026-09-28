@@ -9,7 +9,7 @@ import {
   updateUserAction,
 } from '@/lib/auth/admin-actions';
 import { getSessionCapabilities } from '@/lib/auth/permissions';
-import { getUserById, listRoles, listTeams } from '@/lib/auth/users';
+import { getUserById, listRoles } from '@/lib/auth/users';
 
 export default async function EditUserPage({
   params,
@@ -23,11 +23,7 @@ export default async function EditUserPage({
   const userId = Number(userIdRaw);
   if (!userId) notFound();
 
-  const [user, roles, teams] = await Promise.all([
-    getUserById(userId),
-    listRoles(),
-    listTeams(),
-  ]);
+  const [user, roles] = await Promise.all([getUserById(userId), listRoles()]);
   if (!user) notFound();
 
   const isSelf = caps.session?.id === user.id;
@@ -80,32 +76,19 @@ export default async function EditUserPage({
               placeholder="Leave blank to keep current"
             />
           </label>
-          <div className={formStyles.row}>
-            <label className={formStyles.field}>
-              <span>Role</span>
-              <select name="roleId" required defaultValue={String(user.roleId)}>
-                {roles.map((r) => (
-                  <option key={r.id} value={r.id}>
-                    {r.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className={formStyles.field}>
-              <span>Team</span>
-              <select
-                name="teamId"
-                defaultValue={user.teamId != null ? String(user.teamId) : ''}
-              >
-                <option value="">None</option>
-                {teams.map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-          </div>
+          <label className={formStyles.field}>
+            <span>Role</span>
+            <select name="roleId" required defaultValue={String(user.roleId)}>
+              {roles.map((r) => (
+                <option key={r.id} value={r.id}>
+                  {r.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <Text size="sm" tone="mute">
+            Team is always Rotating for this plant.
+          </Text>
           <label className={formStyles.field}>
             <span>Status</span>
             <select name="isActive" defaultValue={user.isActive ? '1' : '0'} disabled={isSelf}>
@@ -113,9 +96,7 @@ export default async function EditUserPage({
               <option value="0">Inactive</option>
             </select>
           </label>
-          {isSelf ? (
-            <input type="hidden" name="isActive" value="1" />
-          ) : null}
+          {isSelf ? <input type="hidden" name="isActive" value="1" /> : null}
           <div className={formStyles.actionsRow}>
             <Button variant="secondary" href="/lineage/admin">
               Cancel

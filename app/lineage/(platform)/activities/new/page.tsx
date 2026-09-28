@@ -3,7 +3,6 @@ import { Button, Stack, Surface, Text } from '@/components/design-system';
 import { ActionForm } from '@/components/domain/ActionForm';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { getSessionCapabilities } from '@/lib/auth/permissions';
-import { listTeams } from '@/lib/auth/users';
 import { listEquipment } from '@/lib/data/plant';
 import { createActivityAction } from '@/lib/data/plant-writes';
 import styles from './page.module.css';
@@ -12,7 +11,7 @@ export default async function NewActivityPage() {
   const caps = await getSessionCapabilities();
   if (!caps.canCreate) redirect('/lineage/activities');
 
-  const [equipment, teams] = await Promise.all([listEquipment(), listTeams()]);
+  const equipment = await listEquipment();
   const session = caps.session!;
 
   return (
@@ -20,7 +19,7 @@ export default async function NewActivityPage() {
       <PageHeader
         eyebrow="Create"
         title="New activity"
-        description={`Opened by ${session.name} (${session.role}). Saves to Hostinger MySQL as status Open.`}
+        description={`Opened by ${session.name} (${session.role}). Assigned to Rotating. Saves as Open.`}
         breadcrumbs={[
           { label: 'Activities', href: '/lineage/activities' },
           { label: 'New' },
@@ -71,22 +70,8 @@ export default async function NewActivityPage() {
               </select>
             </label>
           </div>
-          <label className={styles.field}>
-            <span>Assigned team</span>
-            <select
-              name="teamId"
-              required
-              defaultValue={session.teamId ? String(session.teamId) : '1'}
-            >
-              {teams.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.name}
-                </option>
-              ))}
-            </select>
-          </label>
           <Text size="sm" tone="mute">
-            Reported by: {session.name}
+            Reported by: {session.name} · Team: Rotating
           </Text>
           <label className={styles.field}>
             <span>Description</span>

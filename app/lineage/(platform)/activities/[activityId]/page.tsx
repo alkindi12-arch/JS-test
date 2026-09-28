@@ -1,12 +1,15 @@
 import { notFound } from 'next/navigation';
 import { Badge, Button, Stack, Surface, Text } from '@/components/design-system';
+import { ActionForm } from '@/components/domain/ActionForm';
 import { AttachmentsPanel } from '@/components/domain/AttachmentsPanel';
+import { DailyProgressPanel } from '@/components/domain/DailyProgressPanel';
 import { MarkCompletedButton } from '@/components/domain/MarkCompletedButton';
 import { RcaPanel } from '@/components/domain/RcaPanel';
 import { WorkOrdersPanel } from '@/components/domain/WorkOrdersPanel';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { getSessionCapabilities } from '@/lib/auth/permissions';
 import { labelActivityStatus, labelActivityType } from '@/lib/format';
+import { deleteActivityAction } from '@/lib/data/plant-writes';
 import {
   attachmentsForActivity,
   getActivity,
@@ -39,10 +42,11 @@ export default async function ActivityDetailPage({
   const isCompleted = activity.status === 'completed';
   const canComplete = !isCompleted && !isClosed && caps.canComplete;
   const canClose = isCompleted && caps.canClose;
-  const canEditRca = !isClosed && (caps.canUpdate || caps.canClose);
+  const canEditRca = (!isClosed && (caps.canUpdate || caps.canClose)) || caps.canAdmin;
   const awaitingSupervisorClose = isCompleted && !caps.canClose;
-  const canEditWo = !isClosed && caps.canUpdate;
-  const canUpload = !isClosed && caps.canUpdate;
+  const canManageChildren = (!isClosed && caps.canUpdate) || caps.canAdmin;
+  const canUpload = canManageChildren;
+  const canEditWo = canManageChildren;
 
   const startedLabel = activity.openedAt
     ? `Opened ${activity.openedAt}`
@@ -64,7 +68,15 @@ export default async function ActivityDetailPage({
             <Button href={`/lineage/equipment/${activity.equipmentId}`} variant="secondary">
               {eq?.tagNumber ?? 'Equipment'}
             </Button>
-            {!isClosed && caps.canUpdate ? (
+            {caps.canAdmin ? (
+              <Button
+                href={`/lineage/activities/${activity.id}/edit`}
+                variant="secondary"
+              >
+                Edit activity
+              </Button>
+            ) : null}
+            {(!isClosed && caps.canUpdate) || caps.canAdmin ? (
               <Button href={`/lineage/activities/${activity.id}/update`}>Add update</Button>
             ) : null}
           </>
@@ -84,7 +96,6 @@ export default async function ActivityDetailPage({
         >
           {activity.priority}
         </Badge>
-        <Badge>{activity.team}</Badge>
         {activity.delayed ? <Badge tone="danger">Delayed</Badge> : null}
         {workOrders.map((wo) => (
           <Badge key={wo.id} tone="ok">
@@ -96,37 +107,11 @@ export default async function ActivityDetailPage({
       <div className={styles.split}>
         <Stack gap={4}>
           <Surface pad={5} className="animate-fade-up stagger-1">
-            <Stack gap={4}>
-              <Text as="h2" display size="xl">
-                Daily progress
-              </Text>
-              <Text size="sm" tone="mute">
-                Timeline from Hostinger MySQL — expandable to unlimited updates.
-              </Text>
-              {updates.length === 0 ? (
-                <Text size="sm" tone="mute">
-                  No daily updates yet.
-                </Text>
-              ) : (
-                <ol className={styles.timeline}>
-                  {updates.map((u, i) => (
-                    <li key={u.id} className={styles.event}>
-                      <span className={styles.rail} aria-hidden>
-                        <span className={styles.dot} />
-                        {i < updates.length - 1 ? <span className={styles.line} /> : null}
-                      </span>
-                      <div className={styles.eventBody}>
-                        <Text size="xs" tone="mute">
-                          {u.date} · {u.author}
-                          {u.progressPct != null ? ` · ${u.progressPct}%` : ''}
-                        </Text>
-                        <Text size="sm">{u.notes}</Text>
-                      </div>
-                    </li>
-                  ))}
-                </ol>
-              )}
-            </Stack>
+            <DailyProgressPanel
+              activityId={activity.id}
+              updates={updates}
+              canManage={canManageChildren}
+            />
           </Surface>
 
           <Surface pad={5} className="animate-fade-up stagger-2">
@@ -146,6 +131,28 @@ export default async function ActivityDetailPage({
               awaitingSupervisorClose={awaitingSupervisorClose}
             />
           </Surface>
+
+          {caps.canAdmin ? (
+            <Surface pad={5} className="animate-fade-up stagger-3">
+              <Stack gap={3}>
+                <Text as="h2" display size="lg">
+                  Remove activity
+                </Text>
+                <Text size="sm" tone="mute">
+                  Soft-deletes this activity from lists and reports. Related updates and
+                  files stay in the database for audit.
+                </Text>
+                <ActionForm
+                  action={deleteActivityAction}
+                  submitLabel="Delete activity"
+                  submitVariant="danger"
+                  pendingLabel="Deleting…"
+                >
+                  <input type="hidden" name="activityId" value={activity.id} />
+                </ActionForm>
+              </Stack>
+            </Surface>
+          ) : null}
         </Stack>
 
         <Surface pad={5} className={`animate-fade-up stagger-2 ${styles.side}`}>
@@ -154,6 +161,7 @@ export default async function ActivityDetailPage({
               activityId={activity.id}
               attachments={attachments}
               canUpload={canUpload}
+              canDelete={canManageChildren}
             />
             <Text as="h2" display size="lg">
               Next status
