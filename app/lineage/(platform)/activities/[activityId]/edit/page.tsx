@@ -1,6 +1,7 @@
 import { notFound, redirect } from 'next/navigation';
 import { Button, Stack, Surface, Text } from '@/components/design-system';
 import { ActionForm } from '@/components/domain/ActionForm';
+import { EquipmentSearchSelect } from '@/components/domain/EquipmentSearchSelect';
 import formStyles from '@/components/domain/EntityForm.module.css';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { getSessionCapabilities } from '@/lib/auth/permissions';
@@ -21,6 +22,12 @@ export default async function EditActivityPage({
     listEquipment(),
   ]);
   if (!activity) notFound();
+
+  const equipmentOptions = equipment.map((e) => ({
+    id: e.id,
+    tagNumber: e.tagNumber,
+    description: e.description,
+  }));
 
   return (
     <Stack gap={6}>
@@ -46,16 +53,11 @@ export default async function EditActivityPage({
             <span>Title</span>
             <input name="title" required maxLength={255} defaultValue={activity.title} />
           </label>
-          <label className={formStyles.field}>
-            <span>Equipment</span>
-            <select name="equipmentId" required defaultValue={activity.equipmentId}>
-              {equipment.map((e) => (
-                <option key={e.id} value={e.id}>
-                  {e.tagNumber} — {e.description}
-                </option>
-              ))}
-            </select>
-          </label>
+          <EquipmentSearchSelect
+            equipment={equipmentOptions}
+            defaultValue={activity.equipmentId}
+            required
+          />
           <div className={formStyles.row}>
             <label className={formStyles.field}>
               <span>Type</span>

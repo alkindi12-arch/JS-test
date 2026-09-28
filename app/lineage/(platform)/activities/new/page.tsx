@@ -1,6 +1,7 @@
 import { redirect } from 'next/navigation';
 import { Button, Stack, Surface, Text } from '@/components/design-system';
 import { ActionForm } from '@/components/domain/ActionForm';
+import { EquipmentSearchSelect } from '@/components/domain/EquipmentSearchSelect';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { getSessionCapabilities } from '@/lib/auth/permissions';
 import { listEquipment } from '@/lib/data/plant';
@@ -13,6 +14,11 @@ export default async function NewActivityPage() {
 
   const equipment = await listEquipment();
   const session = caps.session!;
+  const equipmentOptions = equipment.map((e) => ({
+    id: e.id,
+    tagNumber: e.tagNumber,
+    description: e.description,
+  }));
 
   return (
     <Stack gap={6}>
@@ -32,19 +38,7 @@ export default async function NewActivityPage() {
           submitLabel="Save as open"
           className={styles.fields}
         >
-          <label className={styles.field}>
-            <span>Equipment</span>
-            <select name="equipmentId" required defaultValue="">
-              <option value="" disabled>
-                Select tag…
-              </option>
-              {equipment.map((e) => (
-                <option key={e.id} value={e.id}>
-                  {e.tagNumber} — {e.description}
-                </option>
-              ))}
-            </select>
-          </label>
+          <EquipmentSearchSelect equipment={equipmentOptions} required />
           <label className={styles.field}>
             <span>Title</span>
             <input name="title" required placeholder="e.g. Pump vibration high" />
