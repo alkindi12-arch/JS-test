@@ -19,9 +19,11 @@ export type ShellUser = {
 export function AppShell({
   children,
   user,
+  showAdmin = false,
 }: {
   children: React.ReactNode;
   user?: ShellUser | null;
+  showAdmin?: boolean;
 }) {
   const pathname = usePathname();
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -83,16 +85,18 @@ export function AppShell({
           <Icon name="areas" />
           <span className={styles.navLabel}>All apps</span>
         </Link>
-        {adminNav.map((item) => (
-          <Link
-            key={item.href}
-            href={item.href}
-            className={cx(styles.navItem, isActive(item.href) && styles.navItemActive)}
-          >
-            <Icon name={item.icon} />
-            <span className={styles.navLabel}>{item.label}</span>
-          </Link>
-        ))}
+        {showAdmin
+          ? adminNav.map((item) => (
+              <Link
+                key={item.href}
+                href={item.href}
+                className={cx(styles.navItem, isActive(item.href) && styles.navItemActive)}
+              >
+                <Icon name={item.icon} />
+                <span className={styles.navLabel}>{item.label}</span>
+              </Link>
+            ))
+          : null}
         <div className={styles.userChip}>
           <span className={styles.avatar} aria-hidden>
             {display.initials}

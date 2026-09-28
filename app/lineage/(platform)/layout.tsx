@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 import { AppShell } from '@/components/layout/AppShell';
-import { getSession } from '@/lib/auth/session';
+import { getSessionCapabilities } from '@/lib/auth/permissions';
 
 export const dynamic = 'force-dynamic';
 
@@ -26,15 +26,16 @@ export default async function LineagePlatformLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const session = await getSession();
+  const caps = await getSessionCapabilities();
   return (
     <AppShell
+      showAdmin={caps.canAdmin}
       user={
-        session
+        caps.session
           ? {
-              name: session.name,
-              role: session.role,
-              initials: initials(session.name),
+              name: caps.session.name,
+              role: caps.session.role,
+              initials: initials(caps.session.name),
             }
           : null
       }

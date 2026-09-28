@@ -5,6 +5,7 @@ import { MarkCompletedButton } from '@/components/domain/MarkCompletedButton';
 import { RcaPanel } from '@/components/domain/RcaPanel';
 import { WorkOrdersPanel } from '@/components/domain/WorkOrdersPanel';
 import { PageHeader } from '@/components/layout/PageHeader';
+import { getSessionCapabilities } from '@/lib/auth/permissions';
 import { labelActivityStatus, labelActivityType } from '@/lib/format';
 import {
   attachmentsForActivity,
@@ -25,21 +26,23 @@ export default async function ActivityDetailPage({
   const activity = await getActivity(activityId);
   if (!activity) notFound();
 
-  const [eq, updates, attachments, rca, workOrders] = await Promise.all([
+  const [eq, updates, attachments, rca, workOrders, caps] = await Promise.all([
     getEquipment(activity.equipmentId),
     updatesForActivity(activity.id),
     attachmentsForActivity(activity.id),
     getRca(activity.id),
     workOrdersForActivity(activity.id),
+    getSessionCapabilities(),
   ]);
 
   const isClosed = activity.status === 'closed';
-  const canComplete =
-    activity.status !== 'completed' && activity.status !== 'closed';
-  const canClose = activity.status === 'completed';
-  const canEditRca = !isClosed;
-  const canEditWo = !isClosed;
-  const canUpload = !isClosed;
+  const isCompleted = activity.status === 'completed';
+  const canComplete = !isCompleted && !isClosed && caps.canComplete;
+  const canClose = isCompleted && caps.canClose;
+  const canEditRca = !isClosed && (caps.canUpdate || caps.canClose);
+  const awaitingSupervisorClose = isCompleted && !caps.canClose;
+  const canEditWo = !isClosed && caps.canUpdate;
+  const canUpload = !isClosed && caps.canUpdate;
 
   const startedLabel = activity.openedAt
     ? `Opened ${activity.openedAt}`
@@ -61,7 +64,7 @@ export default async function ActivityDetailPage({
             <Button href={`/lineage/equipment/${activity.equipmentId}`} variant="secondary">
               {eq?.tagNumber ?? 'Equipment'}
             </Button>
-            {!isClosed ? (
+            {!isClosed && caps.canUpdate ? (
               <Button href={`/lineage/activities/${activity.id}/update`}>Add update</Button>
             ) : null}
           </>
@@ -140,6 +143,7 @@ export default async function ActivityDetailPage({
               rca={rca}
               canEdit={canEditRca}
               canClose={canClose}
+              awaitingSupervisorClose={awaitingSupervisorClose}
             />
           </Surface>
         </Stack>
@@ -163,9 +167,19 @@ export default async function ActivityDetailPage({
               <Text size="sm" tone="mute">
                 Activity is closed.
               </Text>
+            ) : isCompleted ? (
+              <Text size="sm" tone="mute">
+                {caps.canClose
+                  ? 'Complete — use RCA panel to close.'
+                  : 'Awaiting Supervisor/Admin to close with RCA.'}
+              </Text>
+            ) : !caps.canComplete ? (
+              <Text size="sm" tone="mute">
+                Your role ({caps.session?.role ?? 'none'}) cannot mark completed.
+              </Text>
             ) : (
               <Text size="sm" tone="mute">
-                Complete — use RCA panel to close.
+                Use Add update to progress this activity.
               </Text>
             )}
           </Stack>

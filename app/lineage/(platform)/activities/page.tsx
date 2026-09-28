@@ -1,6 +1,7 @@
 import { Button, Stack, Surface, Text } from '@/components/design-system';
 import { ActivityRow } from '@/components/domain/ActivityRow';
 import { PageHeader } from '@/components/layout/PageHeader';
+import { getSessionCapabilities } from '@/lib/auth/permissions';
 import {
   activitiesByWorkOrderRef,
   listActivities,
@@ -16,9 +17,10 @@ export default async function ActivitiesPage({
   const { wo } = await searchParams;
   const woFilter = wo?.trim() ?? '';
 
-  const [activities, equipment] = await Promise.all([
+  const [activities, equipment, caps] = await Promise.all([
     woFilter ? activitiesByWorkOrderRef(woFilter) : listActivities(),
     listEquipment(),
+    getSessionCapabilities(),
   ]);
   const tagMap = Object.fromEntries(equipment.map((e) => [e.id, e.tagNumber]));
 
@@ -32,7 +34,11 @@ export default async function ActivitiesPage({
           { label: 'Dashboard', href: '/lineage/dashboard' },
           { label: 'Activities' },
         ]}
-        actions={<Button href="/lineage/activities/new">New activity</Button>}
+        actions={
+          caps.canCreate ? (
+            <Button href="/lineage/activities/new">New activity</Button>
+          ) : undefined
+        }
       />
 
       <Surface pad={4} className={`animate-fade-up ${styles.filter}`}>
@@ -63,6 +69,7 @@ export default async function ActivitiesPage({
           <Text size="sm" tone="mute">
             Showing {activities.length} activities
             {woFilter ? ` matching WO “${woFilter}”` : ''}
+            {caps.session ? ` · signed in as ${caps.session.role}` : ''}
           </Text>
           {activities.map((activity) => (
             <ActivityRow

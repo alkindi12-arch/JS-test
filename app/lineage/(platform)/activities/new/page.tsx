@@ -1,25 +1,26 @@
+import { redirect } from 'next/navigation';
 import { Button, Stack, Surface, Text } from '@/components/design-system';
 import { ActionForm } from '@/components/domain/ActionForm';
 import { PageHeader } from '@/components/layout/PageHeader';
-import { getSession } from '@/lib/auth/session';
+import { getSessionCapabilities } from '@/lib/auth/permissions';
 import { listTeams } from '@/lib/auth/users';
 import { listEquipment } from '@/lib/data/plant';
 import { createActivityAction } from '@/lib/data/plant-writes';
 import styles from './page.module.css';
 
 export default async function NewActivityPage() {
-  const [equipment, teams, session] = await Promise.all([
-    listEquipment(),
-    listTeams(),
-    getSession(),
-  ]);
+  const caps = await getSessionCapabilities();
+  if (!caps.canCreate) redirect('/lineage/activities');
+
+  const [equipment, teams] = await Promise.all([listEquipment(), listTeams()]);
+  const session = caps.session!;
 
   return (
     <Stack gap={6}>
       <PageHeader
         eyebrow="Create"
         title="New activity"
-        description="Saves to Hostinger MySQL as status Open. Description becomes the first timeline entry."
+        description={`Opened by ${session.name} (${session.role}). Saves to Hostinger MySQL as status Open.`}
         breadcrumbs={[
           { label: 'Activities', href: '/lineage/activities' },
           { label: 'New' },
@@ -52,7 +53,7 @@ export default async function NewActivityPage() {
           <div className={styles.row}>
             <label className={styles.field}>
               <span>Type</span>
-              <select name="type" defaultValue="breakdown">
+              <select name="type" defaultValue="breakdown" required>
                 <option value="breakdown">Breakdown</option>
                 <option value="pm">PM</option>
                 <option value="inspection">Inspection</option>
@@ -62,7 +63,7 @@ export default async function NewActivityPage() {
             </label>
             <label className={styles.field}>
               <span>Priority</span>
-              <select name="priority" defaultValue="medium">
+              <select name="priority" defaultValue="medium" required>
                 <option value="low">Low</option>
                 <option value="medium">Medium</option>
                 <option value="high">High</option>
@@ -75,7 +76,7 @@ export default async function NewActivityPage() {
             <select
               name="teamId"
               required
-              defaultValue={session?.teamId ? String(session.teamId) : '1'}
+              defaultValue={session.teamId ? String(session.teamId) : '1'}
             >
               {teams.map((t) => (
                 <option key={t.id} value={t.id}>
@@ -84,14 +85,9 @@ export default async function NewActivityPage() {
               ))}
             </select>
           </label>
-          {!session ? (
-            <label className={styles.field}>
-              <span>Reported by</span>
-              <input name="author" placeholder="Your name" defaultValue="Operator" />
-            </label>
-          ) : (
-            <input type="hidden" name="author" value={session.name} />
-          )}
+          <Text size="sm" tone="mute">
+            Reported by: {session.name}
+          </Text>
           <label className={styles.field}>
             <span>Description</span>
             <textarea

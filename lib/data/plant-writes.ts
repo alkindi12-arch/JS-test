@@ -3,7 +3,7 @@
 import { randomBytes } from 'crypto';
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
-import { getSession } from '@/lib/auth/session';
+import { can, requirePermission } from '@/lib/auth/permissions';
 import { isDatabaseConfigured, getPool } from '@/lib/db/mysql';
 import { lineagePath } from '@/lib/lineage/paths';
 import { saveUploadedFile } from '@/lib/uploads/storage';
@@ -159,14 +159,17 @@ export async function createActivityAction(
   const blocked = requireDb();
   if (blocked) return blocked;
 
-  const session = await getSession();
+  const auth = await requirePermission('activities.create');
+  if (!auth.ok) return auth;
+  const { session } = auth;
+
   const title = str(form, 'title');
   const equipmentId = str(form, 'equipmentId');
   const type = str(form, 'type');
   const priority = str(form, 'priority');
   const teamIdRaw = str(form, 'teamId');
   const description = str(form, 'description');
-  const authorFallback = str(form, 'author') || session?.name || 'Operator';
+  const author = session.name;
 
   if (!title) return { ok: false, error: 'Title is required.' };
   if (!equipmentId) return { ok: false, error: 'Equipment is required.' };
@@ -209,8 +212,8 @@ export async function createActivityAction(
       teamDiscipline: team.discipline,
       teamId: team.id,
       startDate,
-      author: authorFallback,
-      openedBy: session?.id ?? null,
+      author,
+      openedBy: session.id,
     },
   );
 
@@ -229,8 +232,8 @@ export async function createActivityAction(
         id: newUpdateId(id),
         activityId: id,
         updateDate: startDate,
-        author: authorFallback,
-        userId: session?.id ?? null,
+        author,
+        userId: session.id,
         notes: description,
       },
     );
@@ -244,7 +247,7 @@ export async function createActivityAction(
       reason: 'activity_opened',
       notes: `Opened ${id}: ${title}`,
       activityId: id,
-      userId: session?.id ?? null,
+      userId: session.id,
     });
   }
 
@@ -262,12 +265,15 @@ export async function addDailyUpdateAction(
   const blocked = requireDb();
   if (blocked) return blocked;
 
-  const session = await getSession();
+  const auth = await requirePermission('activities.update');
+  if (!auth.ok) return auth;
+  const { session, permissions } = auth;
+
   const activityId = str(form, 'activityId');
   const notes = str(form, 'notes');
   const findings = str(form, 'findings');
   const condition = str(form, 'condition') || 'unchanged';
-  const authorFallback = str(form, 'author') || session?.name || 'Technician';
+  const author = session.name;
   const setStatus = str(form, 'setStatus');
   const progressRaw = str(form, 'progressPct');
   const progressPct = progressRaw === '' ? null : Number(progressRaw);
@@ -277,6 +283,12 @@ export async function addDailyUpdateAction(
   if (!CONDITIONS.has(condition)) return { ok: false, error: 'Invalid condition.' };
   if (progressPct != null && (Number.isNaN(progressPct) || progressPct < 0 || progressPct > 100)) {
     return { ok: false, error: 'Progress must be 0–100.' };
+  }
+  if (setStatus === 'completed' && !can(permissions, 'activities.complete')) {
+    return {
+      ok: false,
+      error: 'Not allowed to mark completed. Ask a Supervisor.',
+    };
   }
 
   const pool = getPool();
@@ -302,8 +314,8 @@ export async function addDailyUpdateAction(
       id: newUpdateId(activityId),
       activityId,
       updateDate,
-      author: authorFallback,
-      userId: session?.id ?? null,
+      author,
+      userId: session.id,
       notes,
       findings: findings || null,
       condition,
@@ -340,11 +352,7 @@ export async function addDailyUpdateAction(
     );
 
     if (nextStatus === 'completed') {
-      await maybeReleaseEquipment(
-        activity.equipment_id,
-        activityId,
-        session?.id ?? null,
-      );
+      await maybeReleaseEquipment(activity.equipment_id, activityId, session.id);
     }
   }
 
@@ -361,7 +369,10 @@ export async function markActivityCompletedAction(activityId: string): Promise<A
   if (blocked) return blocked;
   if (!activityId) return { ok: false, error: 'Activity id missing.' };
 
-  const session = await getSession();
+  const auth = await requirePermission('activities.complete');
+  if (!auth.ok) return auth;
+  const { session } = auth;
+
   const pool = getPool();
   const [actRows] = await pool.query(
     `SELECT id, equipment_id, status FROM activities WHERE id = :id LIMIT 1`,
@@ -399,17 +410,13 @@ export async function markActivityCompletedAction(activityId: string): Promise<A
       id: newUpdateId(activityId),
       activityId,
       updateDate: endDate,
-      author: session?.name ?? 'Supervisor',
-      userId: session?.id ?? null,
+      author: session.name,
+      userId: session.id,
       notes: 'Marked completed.',
     },
   );
 
-  await maybeReleaseEquipment(
-    activity.equipment_id,
-    activityId,
-    session?.id ?? null,
-  );
+  await maybeReleaseEquipment(activity.equipment_id, activityId, session.id);
 
   revalidatePath(lineagePath('/dashboard'));
   revalidatePath(lineagePath('/activities'));
@@ -478,12 +485,17 @@ export async function saveRcaAction(
   const blocked = requireDb();
   if (blocked) return blocked;
 
-  const session = await getSession();
+  const auth = await requirePermission('activities.update');
+  if (!auth.ok) return auth;
+  const { session } = auth;
+
   const activityId = str(form, 'activityId');
   const failureMode = str(form, 'failureMode') || null;
   const rootCause = str(form, 'rootCause') || null;
   const correctiveAction = str(form, 'correctiveAction') || null;
-  const verify = str(form, 'verify') === '1';
+  // Only supervisors/admins may verify via close flow; ignore verify from non-closers
+  const verifyRequested = str(form, 'verify') === '1';
+  const verify = verifyRequested && can(auth.permissions, 'activities.close');
 
   if (!activityId) return { ok: false, error: 'Activity id missing.' };
   if (!failureMode && !rootCause && !correctiveAction) {
@@ -502,7 +514,7 @@ export async function saveRcaAction(
     failureMode,
     rootCause,
     correctiveAction,
-    verifiedByUserId: verify ? (session?.id ?? null) : null,
+    verifiedByUserId: verify ? session.id : null,
     verify,
   });
 
@@ -519,7 +531,10 @@ export async function closeActivityAction(
   const blocked = requireDb();
   if (blocked) return blocked;
 
-  const session = await getSession();
+  const auth = await requirePermission('activities.close');
+  if (!auth.ok) return auth;
+  const { session } = auth;
+
   const activityId = str(form, 'activityId');
   const failureMode = str(form, 'failureMode') || null;
   const rootCause = str(form, 'rootCause') || null;
@@ -547,7 +562,7 @@ export async function closeActivityAction(
     failureMode,
     rootCause,
     correctiveAction,
-    verifiedByUserId: session?.id ?? null,
+    verifiedByUserId: session.id,
     verify: true,
   });
 
@@ -578,17 +593,13 @@ export async function closeActivityAction(
       id: newUpdateId(activityId),
       activityId,
       updateDate: endDate,
-      author: session?.name ?? 'Supervisor',
-      userId: session?.id ?? null,
+      author: session.name,
+      userId: session.id,
       notes: closingNotes || 'Activity closed with RCA verified.',
     },
   );
 
-  await maybeReleaseEquipment(
-    activity.equipment_id,
-    activityId,
-    session?.id ?? null,
-  );
+  await maybeReleaseEquipment(activity.equipment_id, activityId, session.id);
 
   revalidatePath(lineagePath('/dashboard'));
   revalidatePath(lineagePath('/activities'));
@@ -605,7 +616,10 @@ export async function setEquipmentStatusAction(
   const blocked = requireDb();
   if (blocked) return blocked;
 
-  const session = await getSession();
+  const auth = await requirePermission('equipment.write');
+  if (!auth.ok) return auth;
+  const { session } = auth;
+
   const equipmentId = str(form, 'equipmentId');
   const nextStatus = str(form, 'status');
   const notes = str(form, 'notes') || null;
@@ -621,7 +635,7 @@ export async function setEquipmentStatusAction(
     reason: 'manual',
     notes,
     activityId: null,
-    userId: session?.id ?? null,
+    userId: session.id,
   });
 
   if (!changed) {
@@ -642,7 +656,10 @@ export async function attachWorkOrderAction(
   const blocked = requireDb();
   if (blocked) return blocked;
 
-  const session = await getSession();
+  const auth = await requirePermission('activities.write');
+  if (!auth.ok) return auth;
+  const { session } = auth;
+
   const activityId = str(form, 'activityId');
   const externalRef = str(form, 'externalRef');
   const title = str(form, 'title') || null;
@@ -683,7 +700,7 @@ export async function attachWorkOrderAction(
         plannedStart,
         plannedFinish,
         notes,
-        userId: session?.id ?? null,
+        userId: session.id,
       },
     );
   } catch (err) {
@@ -707,6 +724,9 @@ export async function updateWorkOrderStatusAction(
 ): Promise<ActionState> {
   const blocked = requireDb();
   if (blocked) return blocked;
+
+  const auth = await requirePermission('activities.write');
+  if (!auth.ok) return auth;
 
   const workOrderId = Number(str(form, 'workOrderId'));
   const status = str(form, 'status');
@@ -741,7 +761,10 @@ export async function uploadAttachmentAction(
   const blocked = requireDb();
   if (blocked) return blocked;
 
-  const session = await getSession();
+  const auth = await requirePermission('activities.update');
+  if (!auth.ok) return auth;
+  const { session } = auth;
+
   const activityId = str(form, 'activityId');
   const file = form.get('file');
 
@@ -780,8 +803,8 @@ export async function uploadAttachmentAction(
       fileType: file.type || 'application/octet-stream',
       fileSize: saved.bytes,
       fileUrl: saved.relativeUrl,
-      uploadedBy: session?.name ?? 'Operator',
-      userId: session?.id ?? null,
+      uploadedBy: session.name,
+      userId: session.id,
     },
   );
 

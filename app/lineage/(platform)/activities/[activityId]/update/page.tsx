@@ -1,8 +1,8 @@
-import { notFound } from 'next/navigation';
+import { notFound, redirect } from 'next/navigation';
 import { Button, Stack, Surface, Text } from '@/components/design-system';
 import { ActionForm } from '@/components/domain/ActionForm';
 import { PageHeader } from '@/components/layout/PageHeader';
-import { getSession } from '@/lib/auth/session';
+import { getSessionCapabilities } from '@/lib/auth/permissions';
 import { getActivity } from '@/lib/data/plant';
 import { addDailyUpdateAction } from '@/lib/data/plant-writes';
 import styles from './page.module.css';
@@ -13,18 +13,21 @@ export default async function AddUpdatePage({
   params: Promise<{ activityId: string }>;
 }) {
   const { activityId } = await params;
-  const [activity, session] = await Promise.all([
+  const [activity, caps] = await Promise.all([
     getActivity(activityId),
-    getSession(),
+    getSessionCapabilities(),
   ]);
   if (!activity) notFound();
+  if (!caps.canUpdate) redirect(`/lineage/activities/${activityId}`);
+
+  const session = caps.session!;
 
   return (
     <Stack gap={6}>
       <PageHeader
         eyebrow={activityId}
         title="Add daily update"
-        description="Posts a timeline entry to Hostinger MySQL. Open activities move to In Progress automatically."
+        description={`Posted as ${session.name} (${session.role}). Open activities move to In Progress automatically.`}
         breadcrumbs={[
           { label: 'Activities', href: '/lineage/activities' },
           { label: activityId, href: `/lineage/activities/${activityId}` },
@@ -38,14 +41,6 @@ export default async function AddUpdatePage({
           className={styles.fields}
         >
           <input type="hidden" name="activityId" value={activityId} />
-          {session ? (
-            <input type="hidden" name="author" value={session.name} />
-          ) : (
-            <label className={styles.field}>
-              <span>Author</span>
-              <input name="author" defaultValue="Technician" />
-            </label>
-          )}
           <label className={styles.field}>
             <span>Progress notes</span>
             <textarea name="notes" rows={4} required placeholder="What was done this shift?" />
@@ -74,9 +69,16 @@ export default async function AddUpdatePage({
               <option value="">Auto (Open → In Progress)</option>
               <option value="in_progress">In Progress</option>
               <option value="waiting_parts">Waiting Parts</option>
-              <option value="completed">Completed</option>
+              {caps.canComplete ? (
+                <option value="completed">Completed</option>
+              ) : null}
             </select>
           </label>
+          {!caps.canComplete ? (
+            <Text size="xs" tone="faint">
+              Marking Completed requires Supervisor/Admin.
+            </Text>
+          ) : null}
           <Text size="xs" tone="faint">
             Attach files from the activity detail page after posting notes.
           </Text>

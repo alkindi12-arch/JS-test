@@ -3,6 +3,7 @@ import { Badge, Button, Grid, Stack, Surface, Text } from '@/components/design-s
 import { ActivityRow } from '@/components/domain/ActivityRow';
 import { EquipmentStatusForm } from '@/components/domain/EquipmentStatusForm';
 import { PageHeader } from '@/components/layout/PageHeader';
+import { getSessionCapabilities } from '@/lib/auth/permissions';
 import { labelEquipmentStatus } from '@/lib/format';
 import {
   activitiesForEquipment,
@@ -30,10 +31,11 @@ export default async function EquipmentDetailPage({
   const { equipmentId } = await params;
   const item = await getEquipment(equipmentId);
   if (!item) notFound();
-  const [unit, history, statusHistory] = await Promise.all([
+  const [unit, history, statusHistory, caps] = await Promise.all([
     getUnit(item.unitId),
     activitiesForEquipment(item.id),
     statusHistoryForEquipment(item.id),
+    getSessionCapabilities(),
   ]);
 
   return (
@@ -47,7 +49,11 @@ export default async function EquipmentDetailPage({
           ...(unit ? [{ label: unit.id, href: `/lineage/units/${unit.id}` }] : []),
           { label: item.tagNumber },
         ]}
-        actions={<Button href="/lineage/activities/new">Create activity</Button>}
+        actions={
+          caps.canCreate ? (
+            <Button href="/lineage/activities/new">Create activity</Button>
+          ) : undefined
+        }
       />
 
       <Grid columns={3} gap={4} className="animate-fade-up">
@@ -136,7 +142,18 @@ export default async function EquipmentDetailPage({
         </Surface>
 
         <Surface pad={5} className={`animate-fade-up stagger-2 ${styles.side}`}>
-          <EquipmentStatusForm equipmentId={item.id} currentStatus={item.status} />
+          {caps.canEquipmentWrite ? (
+            <EquipmentStatusForm equipmentId={item.id} currentStatus={item.status} />
+          ) : (
+            <Stack gap={2}>
+              <Text as="h2" display size="lg">
+                Change status
+              </Text>
+              <Text size="sm" tone="mute">
+                Your role cannot change equipment status.
+              </Text>
+            </Stack>
+          )}
         </Surface>
       </div>
 

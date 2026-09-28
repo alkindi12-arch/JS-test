@@ -11,11 +11,13 @@ export function RcaPanel({
   rca,
   canEdit,
   canClose,
+  awaitingSupervisorClose = false,
 }: {
   activityId: string;
   rca: RootCauseAnalysis | null;
   canEdit: boolean;
   canClose: boolean;
+  awaitingSupervisorClose?: boolean;
 }) {
   const verifiedLabel =
     rca?.verifiedAt && rca.verifiedByName
@@ -23,6 +25,9 @@ export function RcaPanel({
       : rca?.verifiedAt
         ? `Verified ${rca.verifiedAt}`
         : null;
+
+  const showCloseForm = canClose;
+  const showSaveForm = canEdit && !canClose && !awaitingSupervisorClose;
 
   return (
     <div className={styles.panel}>
@@ -39,14 +44,20 @@ export function RcaPanel({
         </Text>
       ) : null}
 
-      {canEdit ? (
+      {awaitingSupervisorClose ? (
+        <Text size="sm" tone="mute">
+          Completed — a Supervisor or Admin must close and verify RCA.
+        </Text>
+      ) : null}
+
+      {showCloseForm || showSaveForm ? (
         <ActionForm
-          action={canClose ? closeActivityAction : saveRcaAction}
-          submitLabel={canClose ? 'Close with RCA' : 'Save RCA'}
+          action={showCloseForm ? closeActivityAction : saveRcaAction}
+          submitLabel={showCloseForm ? 'Close with RCA' : 'Save RCA'}
           className={styles.fields}
         >
           <input type="hidden" name="activityId" value={activityId} />
-          {canClose ? null : <input type="hidden" name="verify" value="0" />}
+          {showCloseForm ? null : <input type="hidden" name="verify" value="0" />}
           <label className={styles.field}>
             <span>Failure mode</span>
             <input
@@ -56,26 +67,26 @@ export function RcaPanel({
             />
           </label>
           <label className={styles.field}>
-            <span>Root cause{canClose ? ' *' : ''}</span>
+            <span>Root cause{showCloseForm ? ' *' : ''}</span>
             <textarea
               name="rootCause"
               rows={3}
-              required={canClose}
+              required={showCloseForm}
               defaultValue={rca?.rootCause ?? ''}
               placeholder="Why did this fail?"
             />
           </label>
           <label className={styles.field}>
-            <span>Corrective action{canClose ? ' *' : ''}</span>
+            <span>Corrective action{showCloseForm ? ' *' : ''}</span>
             <textarea
               name="correctiveAction"
               rows={3}
-              required={canClose}
+              required={showCloseForm}
               defaultValue={rca?.correctiveAction ?? ''}
               placeholder="What prevents recurrence?"
             />
           </label>
-          {canClose ? (
+          {showCloseForm ? (
             <label className={styles.field}>
               <span>Closing notes</span>
               <textarea
