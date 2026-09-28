@@ -320,7 +320,8 @@ All writes use this constant; UI never asks.
 1. Audit every hierarchy page for consistent Add / Edit / Remove.  
 2. Empty-state CTAs (“No units — Add unit”).  
 3. Block-copy when delete forbidden (child counts).  
-4. Optional: Admin “force remove equipment” only after soft-deleting all its activities (document, do not auto-cascade).
+4. Add equipment `serial` to create/edit forms (column already in schema).  
+5. Optional: Admin “force remove equipment” only after soft-deleting all its activities (document, do not auto-cascade).
 
 **Risk:** Low–medium if cascade added; avoid cascade in R4.
 
@@ -333,10 +334,33 @@ All writes use this constant; UI never asks.
 
 ---
 
+## 8.5 Audit confirmation (codebase inventory)
+
+Cross-checked against a full workflow audit of the live tree. Confirms the gap list above and adds these notes:
+
+| Finding | Plan response |
+|---------|----------------|
+| Hierarchy Admin CRUD already exists for Area / Unit / Equipment with empty-child delete guards | R4 = polish only, not rebuild |
+| **No activity delete action, UI, or permission key anywhere** | R3 primary deliverable |
+| **No post-create activity metadata edit** (title/type/priority/equipment) | R3 edit page |
+| Teams: DB + `listTeams` only; no Team CRUD UI | **Do not build Team CRUD** — R1 removes Team from UI (Rotating-only) |
+| Roles panel is name-only; no `permissions_json` editor | R2 = assign existing roles to users; permission editor stays out of scope |
+| Operator can create but cannot post daily updates | Deferred — not requested now; revisit after R1–R3 if crew needs it |
+| Technician cannot mark Completed (seed: read/write/update only) | Deferred — keep Supervisor complete/close unless product asks otherwise |
+| Equipment `serial` in schema but missing from create/edit forms | Fold into R4 hierarchy polish |
+| No delete for attachments / work orders after create | Out of scope unless Admin asks later |
+| `activities.read` never enforced on pages (any signed-in user can view) | Acceptable for Rotating single-crew app; leave as-is |
+| Session cookie stores `role` at login | R2 must handle re-login or session re-issue after role change (already in §10) |
+
+---
+
 ## 9. Out of scope (this plan)
 
 - Multi-plant / multi-discipline teams returning in UI  
+- **Team CRUD** (intentionally removed, not expanded)  
 - Custom permission matrix editor per role  
+- Changing Operator/Technician lifecycle powers (unless requested later)  
+- Attachment / work-order delete  
 - QR codes, email digests, AI RCA (still Phase 2/3 in system plan)  
 - Dropping `teams` table from MySQL  
 - Changing VARCHAR plant PKs (`A01`, `CDU`, `EQ-…`)
