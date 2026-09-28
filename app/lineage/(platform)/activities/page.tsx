@@ -9,27 +9,49 @@ import {
 } from '@/lib/data/plant';
 import styles from './page.module.css';
 
+function matchesTag(
+  equipmentId: string,
+  tagMap: Record<string, string>,
+  needle: string,
+): boolean {
+  if (!needle) return true;
+  const tag = (tagMap[equipmentId] ?? '').toUpperCase();
+  const id = equipmentId.toUpperCase();
+  const q = needle.toUpperCase();
+  return tag.includes(q) || id.includes(q);
+}
+
 export default async function ActivitiesPage({
   searchParams,
 }: {
-  searchParams: Promise<{ wo?: string }>;
+  searchParams: Promise<{ wo?: string; tag?: string }>;
 }) {
-  const { wo } = await searchParams;
+  const { wo, tag } = await searchParams;
   const woFilter = wo?.trim() ?? '';
+  const tagFilter = tag?.trim() ?? '';
+  const hasFilters = Boolean(woFilter || tagFilter);
 
-  const [activities, equipment, caps] = await Promise.all([
+  const [rawActivities, equipment, caps] = await Promise.all([
     woFilter ? activitiesByWorkOrderRef(woFilter) : listActivities(),
     listEquipment(),
     getSessionCapabilities(),
   ]);
   const tagMap = Object.fromEntries(equipment.map((e) => [e.id, e.tagNumber]));
+  const activities = tagFilter
+    ? rawActivities.filter((a) => matchesTag(a.equipmentId, tagMap, tagFilter))
+    : rawActivities;
+
+  const filterBits = [
+    woFilter ? `WO “${woFilter}”` : null,
+    tagFilter ? `tag “${tagFilter}”` : null,
+  ].filter(Boolean);
 
   return (
     <Stack gap={6}>
       <PageHeader
         eyebrow="Work stream"
         title="Activities"
-        description="Cross-hierarchy list with status, priority, and discipline. Filter by CMMS work order ref."
+        description="Cross-hierarchy list with status, priority, and discipline. Filter by equipment tag or CMMS work order ref."
         breadcrumbs={[
           { label: 'Dashboard', href: '/lineage/dashboard' },
           { label: 'Activities' },
@@ -44,18 +66,28 @@ export default async function ActivitiesPage({
       <Surface pad={4} className={`animate-fade-up ${styles.filter}`}>
         <form method="get" className={styles.filterForm}>
           <label className={styles.filterField}>
+            <span>Equipment tag</span>
+            <input
+              name="tag"
+              defaultValue={tagFilter}
+              placeholder="e.g. 120P-001A"
+              autoComplete="off"
+            />
+          </label>
+          <label className={styles.filterField}>
             <span>Work order ref</span>
             <input
               name="wo"
               defaultValue={woFilter}
               placeholder="e.g. WO-2026-8841"
+              autoComplete="off"
             />
           </label>
           <div className={styles.filterActions}>
             <Button type="submit" variant="secondary">
               Filter
             </Button>
-            {woFilter ? (
+            {hasFilters ? (
               <Button href="/lineage/activities" variant="ghost">
                 Clear
               </Button>
@@ -68,7 +100,7 @@ export default async function ActivitiesPage({
         <Stack gap={1}>
           <Text size="sm" tone="mute">
             Showing {activities.length} activities
-            {woFilter ? ` matching WO “${woFilter}”` : ''}
+            {filterBits.length ? ` matching ${filterBits.join(' · ')}` : ''}
             {caps.session ? ` · signed in as ${caps.session.role}` : ''}
           </Text>
           {activities.map((activity) => (
@@ -79,7 +111,11 @@ export default async function ActivitiesPage({
             />
           ))}
           {activities.length === 0 ? (
-            <Text tone="mute">No activities match this work order filter.</Text>
+            <Text tone="mute">
+              {hasFilters
+                ? 'No activities match this filter.'
+                : 'No activities yet.'}
+            </Text>
           ) : null}
         </Stack>
       </Surface>
