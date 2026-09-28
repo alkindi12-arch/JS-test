@@ -69,6 +69,7 @@ export async function dbUnitsForArea(areaId: string): Promise<Unit[]> {
       u.area_id,
       u.name,
       u.type,
+      u.description,
       (SELECT COUNT(*) FROM equipment e WHERE e.unit_id = u.id) AS equipment_count,
       (
         SELECT COUNT(*)
@@ -94,6 +95,7 @@ export async function dbGetUnit(id: string): Promise<Unit | null> {
       u.area_id,
       u.name,
       u.type,
+      u.description,
       (SELECT COUNT(*) FROM equipment e WHERE e.unit_id = u.id) AS equipment_count,
       (
         SELECT COUNT(*)
@@ -110,6 +112,30 @@ export async function dbGetUnit(id: string): Promise<Unit | null> {
   );
   const list = rows as Row[];
   return list[0] ? mapUnit(list[0]) : null;
+}
+
+export async function dbListUnits(): Promise<Unit[]> {
+  const [rows] = await getPool().query(
+    `
+    SELECT
+      u.id,
+      u.area_id,
+      u.name,
+      u.type,
+      u.description,
+      (SELECT COUNT(*) FROM equipment e WHERE e.unit_id = u.id) AS equipment_count,
+      (
+        SELECT COUNT(*)
+        FROM activities act
+        JOIN equipment e ON e.id = act.equipment_id
+        WHERE e.unit_id = u.id
+          AND act.status IN ${ACTIVE_STATUSES}
+      ) AS active_activities
+    FROM units u
+    ORDER BY u.id
+    `,
+  );
+  return (rows as Row[]).map(mapUnit);
 }
 
 export async function dbListEquipment(): Promise<Equipment[]> {

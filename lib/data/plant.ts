@@ -51,6 +51,11 @@ export async function getUnit(id: string): Promise<Unit | null> {
   return db.dbGetUnit(id);
 }
 
+export async function listUnits(): Promise<Unit[]> {
+  if (!isDatabaseConfigured()) return mock.units;
+  return db.dbListUnits();
+}
+
 export async function listEquipment(): Promise<Equipment[]> {
   if (!isDatabaseConfigured()) return mock.equipment;
   return db.dbListEquipment();

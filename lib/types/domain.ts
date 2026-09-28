@@ -34,6 +34,7 @@ export interface Unit {
   areaId: string;
   name: string;
   type: UnitType;
+  description?: string;
   equipmentCount: number;
   activeActivities: number;
 }

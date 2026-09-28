@@ -1,9 +1,10 @@
-import { Grid, Stack, Surface, Text } from '@/components/design-system';
+import { Button, Grid, Stack, Surface, Text } from '@/components/design-system';
 import { PageHeader } from '@/components/layout/PageHeader';
+import { getSessionCapabilities } from '@/lib/auth/permissions';
 import { listAreas } from '@/lib/data/plant';
 
 export default async function AreasPage() {
-  const areas = await listAreas();
+  const [areas, caps] = await Promise.all([listAreas(), getSessionCapabilities()]);
 
   return (
     <Stack gap={6}>
@@ -12,6 +13,11 @@ export default async function AreasPage() {
         title="Areas"
         description="Plant sections. Drill into units, then equipment, then activities."
         breadcrumbs={[{ label: 'Dashboard', href: '/lineage/dashboard' }, { label: 'Areas' }]}
+        actions={
+          caps.canAdmin ? (
+            <Button href="/lineage/areas/new">Add area</Button>
+          ) : undefined
+        }
       />
       <Grid columns={3} gap={4} className="animate-fade-up">
         {areas.map((area) => (

@@ -47,6 +47,7 @@ export function mapUnit(row: Record<string, unknown>): Unit {
     areaId: String(row.area_id),
     name: String(row.name),
     type: String(row.type) as UnitType,
+    description: row.description ? String(row.description) : undefined,
     equipmentCount: Number(row.equipment_count ?? 0),
     activeActivities: Number(row.active_activities ?? 0),
   };

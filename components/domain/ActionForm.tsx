@@ -3,21 +3,26 @@
 import { useActionState } from 'react';
 import type { ReactNode } from 'react';
 import { Button } from '@/components/design-system';
-import type { ActionState } from '@/lib/data/plant-writes';
 import styles from './ActionForm.module.css';
 
-const initial: ActionState = { ok: true };
+type FormActionState = { ok: boolean; error?: string };
+
+const initial: FormActionState = { ok: true };
 
 export function ActionForm({
   action,
   children,
   submitLabel,
   className,
+  submitVariant = 'primary',
+  pendingLabel = 'Saving…',
 }: {
-  action: (prev: ActionState, form: FormData) => Promise<ActionState>;
+  action: (prev: FormActionState, form: FormData) => Promise<FormActionState>;
   children: ReactNode;
   submitLabel: string;
   className?: string;
+  submitVariant?: 'primary' | 'secondary' | 'ghost' | 'danger';
+  pendingLabel?: string;
 }) {
   const [state, formAction, pending] = useActionState(action, initial);
 
@@ -30,8 +35,8 @@ export function ActionForm({
       ) : null}
       {children}
       <div className={styles.actions}>
-        <Button type="submit" disabled={pending}>
-          {pending ? 'Saving…' : submitLabel}
+        <Button type="submit" variant={submitVariant} disabled={pending}>
+          {pending ? pendingLabel : submitLabel}
         </Button>
       </div>
     </form>

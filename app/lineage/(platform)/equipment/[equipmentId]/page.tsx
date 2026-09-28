@@ -50,9 +50,19 @@ export default async function EquipmentDetailPage({
           { label: item.tagNumber },
         ]}
         actions={
-          caps.canCreate ? (
-            <Button href="/lineage/activities/new">Create activity</Button>
-          ) : undefined
+          <>
+            {caps.canAdmin ? (
+              <Button
+                variant="secondary"
+                href={`/lineage/equipment/${item.id}/edit`}
+              >
+                Edit equipment
+              </Button>
+            ) : null}
+            {caps.canCreate ? (
+              <Button href="/lineage/activities/new">Create activity</Button>
+            ) : null}
+          </>
         }
       />
 

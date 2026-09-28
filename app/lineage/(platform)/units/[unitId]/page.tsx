@@ -2,6 +2,7 @@ import { notFound } from 'next/navigation';
 import { Button, Grid, KpiMetric, Stack, Surface, Text } from '@/components/design-system';
 import { EquipmentListItem } from '@/components/domain/EquipmentListItem';
 import { PageHeader } from '@/components/layout/PageHeader';
+import { getSessionCapabilities } from '@/lib/auth/permissions';
 import { equipmentForUnit, getArea, getUnit } from '@/lib/data/plant';
 
 export default async function UnitDetailPage({
@@ -10,7 +11,7 @@ export default async function UnitDetailPage({
   params: Promise<{ unitId: string }>;
 }) {
   const { unitId } = await params;
-  const unit = await getUnit(unitId);
+  const [unit, caps] = await Promise.all([getUnit(unitId), getSessionCapabilities()]);
   if (!unit) notFound();
   const [area, items] = await Promise.all([
     getArea(unit.areaId),
@@ -28,7 +29,30 @@ export default async function UnitDetailPage({
           { label: area?.name ?? unit.areaId, href: `/lineage/areas/${unit.areaId}` },
           { label: unit.id },
         ]}
-        actions={<Button href="/lineage/activities/new">New activity</Button>}
+        actions={
+          <>
+            {caps.canAdmin ? (
+              <>
+                <Button variant="secondary" href={`/lineage/units/${unit.id}/edit`}>
+                  Edit unit
+                </Button>
+                <Button
+                  href={`/lineage/equipment/new?unitId=${encodeURIComponent(unit.id)}`}
+                >
+                  Add equipment
+                </Button>
+              </>
+            ) : null}
+            {caps.canCreate ? (
+              <Button
+                variant={caps.canAdmin ? 'secondary' : 'primary'}
+                href="/lineage/activities/new"
+              >
+                New activity
+              </Button>
+            ) : null}
+          </>
+        }
       />
 
       <Grid columns={3} gap={4} className="animate-fade-up">

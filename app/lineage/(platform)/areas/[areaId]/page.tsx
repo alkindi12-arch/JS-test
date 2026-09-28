@@ -1,6 +1,7 @@
 import { notFound } from 'next/navigation';
-import { Grid, KpiMetric, Stack, Surface, Text } from '@/components/design-system';
+import { Button, Grid, KpiMetric, Stack, Surface, Text } from '@/components/design-system';
 import { PageHeader } from '@/components/layout/PageHeader';
+import { getSessionCapabilities } from '@/lib/auth/permissions';
 import { getArea, unitsForArea } from '@/lib/data/plant';
 
 export default async function AreaDetailPage({
@@ -9,7 +10,7 @@ export default async function AreaDetailPage({
   params: Promise<{ areaId: string }>;
 }) {
   const { areaId } = await params;
-  const area = await getArea(areaId);
+  const [area, caps] = await Promise.all([getArea(areaId), getSessionCapabilities()]);
   if (!area) notFound();
   const units = await unitsForArea(area.id);
 
@@ -23,6 +24,18 @@ export default async function AreaDetailPage({
           { label: 'Areas', href: '/lineage/areas' },
           { label: area.name },
         ]}
+        actions={
+          caps.canAdmin ? (
+            <>
+              <Button variant="secondary" href={`/lineage/areas/${area.id}/edit`}>
+                Edit area
+              </Button>
+              <Button href={`/lineage/units/new?areaId=${encodeURIComponent(area.id)}`}>
+                Add unit
+              </Button>
+            </>
+          ) : undefined
+        }
       />
 
       <Grid columns={3} gap={4} className="animate-fade-up">
@@ -59,6 +72,9 @@ export default async function AreaDetailPage({
               </Surface>
             ))}
           </Grid>
+          {units.length === 0 ? (
+            <Text tone="mute">No units in this area yet.</Text>
+          ) : null}
         </Stack>
       </section>
     </Stack>

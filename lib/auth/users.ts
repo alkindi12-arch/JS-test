@@ -81,3 +81,91 @@ export async function listTeams(): Promise<Array<{ id: number; name: string; dis
     discipline: String(r.discipline),
   }));
 }
+
+export type RoleOption = { id: number; name: string };
+
+export async function listRoles(): Promise<RoleOption[]> {
+  if (!isDatabaseConfigured()) {
+    return [
+      { id: 1, name: 'Admin' },
+      { id: 2, name: 'Supervisor' },
+      { id: 3, name: 'Technician' },
+      { id: 4, name: 'Operator' },
+    ];
+  }
+  const [rows] = await getPool().query(`SELECT id, name FROM roles ORDER BY id`);
+  return (rows as Row[]).map((r) => ({
+    id: Number(r.id),
+    name: String(r.name),
+  }));
+}
+
+export type ListedUser = {
+  id: number;
+  name: string;
+  email: string;
+  phone: string | null;
+  teamId: number | null;
+  teamName: string | null;
+  roleId: number;
+  roleName: string;
+  isActive: boolean;
+};
+
+export async function listUsers(): Promise<ListedUser[]> {
+  if (!isDatabaseConfigured()) return [];
+  const [rows] = await getPool().query(
+    `
+    SELECT
+      u.id, u.name, u.email, u.phone, u.team_id, u.role_id, u.is_active,
+      r.name AS role_name,
+      t.name AS team_name
+    FROM users u
+    JOIN roles r ON r.id = u.role_id
+    LEFT JOIN teams t ON t.id = u.team_id
+    ORDER BY u.is_active DESC, u.name ASC
+    `,
+  );
+  return (rows as Row[]).map((r) => ({
+    id: Number(r.id),
+    name: String(r.name),
+    email: String(r.email),
+    phone: r.phone ? String(r.phone) : null,
+    teamId: r.team_id == null ? null : Number(r.team_id),
+    teamName: r.team_name ? String(r.team_name) : null,
+    roleId: Number(r.role_id),
+    roleName: String(r.role_name),
+    isActive: Boolean(r.is_active),
+  }));
+}
+
+export async function getUserById(id: number): Promise<ListedUser | null> {
+  if (!isDatabaseConfigured() || !id) return null;
+  const [rows] = await getPool().query(
+    `
+    SELECT
+      u.id, u.name, u.email, u.phone, u.team_id, u.role_id, u.is_active,
+      r.name AS role_name,
+      t.name AS team_name
+    FROM users u
+    JOIN roles r ON r.id = u.role_id
+    LEFT JOIN teams t ON t.id = u.team_id
+    WHERE u.id = :id
+    LIMIT 1
+    `,
+    { id },
+  );
+  const r = (rows as Row[])[0];
+  if (!r) return null;
+  return {
+    id: Number(r.id),
+    name: String(r.name),
+    email: String(r.email),
+    phone: r.phone ? String(r.phone) : null,
+    teamId: r.team_id == null ? null : Number(r.team_id),
+    teamName: r.team_name ? String(r.team_name) : null,
+    roleId: Number(r.role_id),
+    roleName: String(r.role_name),
+    isActive: Boolean(r.is_active),
+  };
+}
