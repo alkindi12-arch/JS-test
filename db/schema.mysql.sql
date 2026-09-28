@@ -201,6 +201,7 @@ CREATE TABLE IF NOT EXISTS attachments (
   file_type VARCHAR(64) NOT NULL,
   file_size INT UNSIGNED NULL,
   file_url VARCHAR(1024) NOT NULL,
+  comment TEXT NULL,
   uploaded_by VARCHAR(120) NOT NULL,
   uploaded_by_user_id INT UNSIGNED NULL,
   uploaded_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,

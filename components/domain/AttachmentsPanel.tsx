@@ -1,10 +1,15 @@
 'use client';
 
+import { useState } from 'react';
 import { ActionForm } from '@/components/domain/ActionForm';
-import { Text } from '@/components/design-system';
-import type { AttachmentMeta } from '@/lib/data/mappers';
+import { Button, Text } from '@/components/design-system';
+import {
+  isImageAttachment,
+  type AttachmentMeta,
+} from '@/lib/data/mappers';
 import {
   deleteAttachmentAction,
+  updateAttachmentCommentAction,
   uploadAttachmentAction,
 } from '@/lib/data/plant-writes';
 import styles from './AttachmentsPanel.module.css';
@@ -31,7 +36,8 @@ export function AttachmentsPanel({
   canUpload: boolean;
   canDelete?: boolean;
 }) {
-  const allowDelete = canDelete ?? canUpload;
+  const allowManage = canDelete ?? canUpload;
+  const [editingId, setEditingId] = useState<string | null>(null);
 
   return (
     <div className={styles.panel}>
@@ -39,7 +45,8 @@ export function AttachmentsPanel({
         Attachments
       </Text>
       <Text size="sm" tone="mute">
-        Photos, permits, and videos stored under public/uploads (10 MB/file).
+        Photos, permits, and videos — add a comment; photos appear with comments on the
+        report.
       </Text>
 
       {attachments.length === 0 ? (
@@ -51,8 +58,17 @@ export function AttachmentsPanel({
           {attachments.map((f) => {
             const size = formatBytes(f.fileSize);
             const meta = [size, f.uploadedBy, f.uploadedAt].filter(Boolean).join(' · ');
+            const isImage = isImageAttachment(f);
             return (
               <li key={f.id} className={styles.fileItem}>
+                {isImage && isRealUrl(f.fileUrl) ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={f.fileUrl}
+                    alt={f.comment || f.fileName}
+                    className={styles.thumb}
+                  />
+                ) : null}
                 {isRealUrl(f.fileUrl) ? (
                   <a
                     href={f.fileUrl}
@@ -72,23 +88,70 @@ export function AttachmentsPanel({
                     {meta}
                     {!isRealUrl(f.fileUrl) ? ' · seed placeholder' : ''}
                   </Text>
-                ) : !isRealUrl(f.fileUrl) ? (
-                  <Text size="xs" tone="faint">
-                    Seed placeholder (no file on disk)
-                  </Text>
                 ) : null}
-                {allowDelete ? (
+
+                {editingId === f.id && allowManage ? (
                   <ActionForm
-                    action={deleteAttachmentAction}
-                    submitLabel="Remove file"
-                    submitVariant="danger"
-                    pendingLabel="Removing…"
-                    className={styles.deleteForm}
+                    action={updateAttachmentCommentAction}
+                    submitLabel="Save comment"
+                    className={styles.commentForm}
                   >
                     <input type="hidden" name="attachmentId" value={f.id} />
                     <input type="hidden" name="activityId" value={activityId} />
+                    <label className={styles.field}>
+                      <span>Comment</span>
+                      <textarea
+                        name="comment"
+                        rows={2}
+                        maxLength={2000}
+                        defaultValue={f.comment ?? ''}
+                        placeholder="Describe what this file shows…"
+                      />
+                    </label>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setEditingId(null)}
+                    >
+                      Cancel
+                    </Button>
                   </ActionForm>
-                ) : null}
+                ) : (
+                  <>
+                    {f.comment ? (
+                      <Text size="sm" className={styles.comment}>
+                        {f.comment}
+                      </Text>
+                    ) : (
+                      <Text size="xs" tone="faint">
+                        No comment
+                      </Text>
+                    )}
+                    {allowManage ? (
+                      <div className={styles.rowActions}>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setEditingId(f.id)}
+                        >
+                          {f.comment ? 'Edit comment' : 'Add comment'}
+                        </Button>
+                        <ActionForm
+                          action={deleteAttachmentAction}
+                          submitLabel="Remove file"
+                          submitVariant="danger"
+                          pendingLabel="Removing…"
+                          className={styles.deleteForm}
+                        >
+                          <input type="hidden" name="attachmentId" value={f.id} />
+                          <input type="hidden" name="activityId" value={activityId} />
+                        </ActionForm>
+                      </div>
+                    ) : null}
+                  </>
+                )}
               </li>
             );
           })}
@@ -109,6 +172,15 @@ export function AttachmentsPanel({
               type="file"
               required
               accept="image/jpeg,image/png,image/webp,image/gif,application/pdf,video/mp4,text/plain,.jpg,.jpeg,.png,.webp,.gif,.pdf,.mp4,.txt"
+            />
+          </label>
+          <label className={styles.field}>
+            <span>Comment</span>
+            <textarea
+              name="comment"
+              rows={2}
+              maxLength={2000}
+              placeholder="Optional — shown with photos on the report"
             />
           </label>
           <Text size="xs" tone="faint">

@@ -769,19 +769,31 @@ export async function uploadAttachmentAction(
   const { session } = auth;
 
   const activityId = str(form, 'activityId');
+  const comment = str(form, 'comment') || null;
   const file = form.get('file');
 
   if (!activityId) return { ok: false, error: 'Activity id missing.' };
   if (!(file instanceof File)) return { ok: false, error: 'Choose a file to upload.' };
+  if (comment && comment.length > 2000) {
+    return { ok: false, error: 'Comment is too long (max 2000 characters).' };
+  }
 
   const pool = getPool();
   const [actRows] = await pool.query(
-    `SELECT id, equipment_id, status FROM activities WHERE id = :id LIMIT 1`,
+    `SELECT id, equipment_id, status, deleted_at FROM activities WHERE id = :id LIMIT 1`,
     { id: activityId },
   );
-  const activity = (actRows as Array<{ id: string; equipment_id: string; status: string }>)[0];
-  if (!activity) return { ok: false, error: 'Activity not found.' };
-  if (activity.status === 'closed') {
+  const activity = (
+    actRows as Array<{
+      id: string;
+      equipment_id: string;
+      status: string;
+      deleted_at: unknown;
+    }>
+  )[0];
+  if (!activity || activity.deleted_at) return { ok: false, error: 'Activity not found.' };
+  const isAdmin = can(auth.permissions, 'admin');
+  if (activity.status === 'closed' && !isAdmin) {
     return { ok: false, error: 'Cannot attach files to a closed activity.' };
   }
 
@@ -793,10 +805,10 @@ export async function uploadAttachmentAction(
     `
     INSERT INTO attachments (
       id, activity_id, update_id, file_name, file_type, file_size,
-      file_url, uploaded_by, uploaded_by_user_id
+      file_url, comment, uploaded_by, uploaded_by_user_id
     ) VALUES (
       :id, :activityId, NULL, :fileName, :fileType, :fileSize,
-      :fileUrl, :uploadedBy, :userId
+      :fileUrl, :comment, :uploadedBy, :userId
     )
     `,
     {
@@ -806,6 +818,7 @@ export async function uploadAttachmentAction(
       fileType: file.type || 'application/octet-stream',
       fileSize: saved.bytes,
       fileUrl: saved.relativeUrl,
+      comment,
       uploadedBy: session.name,
       userId: session.id,
     },
@@ -813,7 +826,61 @@ export async function uploadAttachmentAction(
 
   revalidatePath(lineagePath(`/activities/${activityId}`));
   revalidatePath(lineagePath(`/equipment/${activity.equipment_id}`));
+  revalidatePath(lineagePath(`/reports/${activityId}`));
 
+  redirect(lineagePath(`/activities/${activityId}`));
+}
+
+export async function updateAttachmentCommentAction(
+  _prev: ActionState,
+  form: FormData,
+): Promise<ActionState> {
+  const blocked = requireDb();
+  if (blocked) return blocked;
+
+  const auth = await requirePermission('activities.update');
+  if (!auth.ok) return auth;
+  const isAdmin = can(auth.permissions, 'admin');
+
+  const attachmentId = str(form, 'attachmentId');
+  const activityId = str(form, 'activityId');
+  const comment = str(form, 'comment') || null;
+
+  if (!attachmentId || !activityId) {
+    return { ok: false, error: 'Attachment id missing.' };
+  }
+  if (comment && comment.length > 2000) {
+    return { ok: false, error: 'Comment is too long (max 2000 characters).' };
+  }
+
+  const pool = getPool();
+  const [actRows] = await pool.query(
+    `SELECT id, status, deleted_at FROM activities WHERE id = :id LIMIT 1`,
+    { id: activityId },
+  );
+  const activity = (
+    actRows as Array<{ id: string; status: string; deleted_at: unknown }>
+  )[0];
+  if (!activity || activity.deleted_at) {
+    return { ok: false, error: 'Activity not found.' };
+  }
+  if (activity.status === 'closed' && !isAdmin) {
+    return { ok: false, error: 'Cannot edit comments on a closed activity.' };
+  }
+
+  const [result] = await pool.query(
+    `
+    UPDATE attachments
+    SET comment = :comment
+    WHERE id = :id AND activity_id = :activityId
+    `,
+    { id: attachmentId, activityId, comment },
+  );
+  const affected = Number((result as { affectedRows?: number }).affectedRows ?? 0);
+  if (!affected) return { ok: false, error: 'Attachment not found.' };
+
+  revalidatePath(lineagePath(`/activities/${activityId}`));
+  revalidatePath(lineagePath(`/reports/${activityId}`));
   redirect(lineagePath(`/activities/${activityId}`));
 }
 

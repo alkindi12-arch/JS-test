@@ -8,6 +8,7 @@ import {
   labelEquipmentStatus,
   labelWorkOrderStatus,
 } from '@/lib/format';
+import { isImageAttachment } from '@/lib/data/mappers';
 import { getActivityReportPack } from '@/lib/data/plant';
 import styles from './page.module.css';
 
@@ -166,29 +167,65 @@ export default async function ActivityReportPage({
 
         <section className={styles.section}>
           <Text as="h2" display size="xl">
-            4. Attachments
+            4. Photos & attachments
           </Text>
           {attachments.length === 0 ? (
             <Text size="sm" tone="mute">
               No attachments.
             </Text>
           ) : (
-            <ul className={styles.files}>
-              {attachments.map((f) => (
-                <li key={f.id}>
-                  {f.fileUrl && f.fileUrl !== '#' ? (
-                    <a href={f.fileUrl}>{f.fileName}</a>
-                  ) : (
-                    <span>
-                      {f.fileName} (placeholder)
-                    </span>
-                  )}
-                  {f.fileSize != null ? (
-                    <span className={styles.fileMeta}> · {f.fileSize} bytes</span>
-                  ) : null}
-                </li>
-              ))}
-            </ul>
+            <>
+              {attachments.some((f) => isImageAttachment(f) && f.fileUrl && f.fileUrl !== '#') ? (
+                <div className={styles.photoGrid}>
+                  {attachments
+                    .filter((f) => isImageAttachment(f) && f.fileUrl && f.fileUrl !== '#')
+                    .map((f) => (
+                      <figure key={f.id} className={styles.photoCard}>
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={f.fileUrl}
+                          alt={f.comment || f.fileName}
+                          className={styles.photo}
+                        />
+                        <figcaption className={styles.photoCaption}>
+                          <Text size="xs" tone="mute">
+                            {f.fileName}
+                            {f.uploadedBy ? ` · ${f.uploadedBy}` : ''}
+                          </Text>
+                          <Text size="sm">
+                            {f.comment?.trim() ? f.comment : 'No comment'}
+                          </Text>
+                        </figcaption>
+                      </figure>
+                    ))}
+                </div>
+              ) : null}
+
+              {attachments.some((f) => !isImageAttachment(f) || !f.fileUrl || f.fileUrl === '#') ? (
+                <ul className={styles.files}>
+                  {attachments
+                    .filter((f) => !isImageAttachment(f) || !f.fileUrl || f.fileUrl === '#')
+                    .map((f) => (
+                      <li key={f.id}>
+                        {f.fileUrl && f.fileUrl !== '#' ? (
+                          <a href={f.fileUrl}>{f.fileName}</a>
+                        ) : (
+                          <span>
+                            {f.fileName}
+                            {!f.fileUrl || f.fileUrl === '#' ? ' (placeholder)' : ''}
+                          </span>
+                        )}
+                        {f.comment?.trim() ? (
+                          <div className={styles.fileComment}>{f.comment}</div>
+                        ) : null}
+                        {f.fileSize != null ? (
+                          <span className={styles.fileMeta}> · {f.fileSize} bytes</span>
+                        ) : null}
+                      </li>
+                    ))}
+                </ul>
+              ) : null}
+            </>
           )}
         </section>
 
