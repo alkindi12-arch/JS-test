@@ -24,6 +24,30 @@ const nextConfig: NextConfig = {
       ],
     };
   },
+  // Keep HTML documents out of CDN/browser caches so redeploys don't leave
+  // stale Server Action IDs in open tabs longer than necessary.
+  async headers() {
+    return [
+      {
+        source: '/lineage/:path*',
+        headers: [
+          {
+            key: 'Cache-Control',
+            value: 'private, no-cache, no-store, max-age=0, must-revalidate',
+          },
+        ],
+      },
+      {
+        source: '/login',
+        headers: [
+          {
+            key: 'Cache-Control',
+            value: 'private, no-cache, no-store, max-age=0, must-revalidate',
+          },
+        ],
+      },
+    ];
+  },
 };
 
 export default nextConfig;

@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from 'next';
 import { Syne, Figtree } from 'next/font/google';
+import { ServerActionRecovery } from '@/components/domain/ServerActionRecovery';
 import './globals.css';
 
 const syne = Syne({
@@ -39,7 +40,10 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className={`${syne.variable} ${figtree.variable}`}>
-      <body className="atmosphere">{children}</body>
+      <body className="atmosphere">
+        <ServerActionRecovery />
+        {children}
+      </body>
     </html>
   );
 }
