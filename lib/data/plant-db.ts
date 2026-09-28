@@ -286,6 +286,7 @@ export async function dbAttachmentsForActivity(activityId: string): Promise<Atta
       a.file_type,
       a.file_size,
       a.file_url,
+      a.comment,
       a.uploaded_by,
       a.uploaded_at,
       u.name AS uploader_name

@@ -129,6 +129,7 @@ export async function attachmentsForActivity(activityId: string): Promise<Attach
         fileName: 'vibration_trend_0918.jpg',
         fileType: 'image/jpeg',
         fileUrl: '#',
+        comment: 'Drive-end vibration trend before isolation',
       },
       {
         id: 'f2',
@@ -136,6 +137,7 @@ export async function attachmentsForActivity(activityId: string): Promise<Attach
         fileName: 'permit_LOTO_1042.pdf',
         fileType: 'application/pdf',
         fileUrl: '#',
+        comment: 'Signed LOTO permit',
       },
       {
         id: 'f3',
@@ -143,6 +145,7 @@ export async function attachmentsForActivity(activityId: string): Promise<Attach
         fileName: 'bearing_housing.mp4',
         fileType: 'video/mp4',
         fileUrl: '#',
+        comment: null,
       },
     ];
   }

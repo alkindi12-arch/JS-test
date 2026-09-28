@@ -168,10 +168,16 @@ export type AttachmentMeta = {
   fileName: string;
   fileType: string;
   fileUrl: string;
+  comment?: string | null;
   fileSize?: number | null;
   uploadedBy?: string | null;
   uploadedAt?: string | null;
 };
+
+export function isImageAttachment(att: Pick<AttachmentMeta, 'fileType' | 'fileName'>): boolean {
+  if (att.fileType?.startsWith('image/')) return true;
+  return /\.(jpe?g|png|webp|gif)$/i.test(att.fileName ?? '');
+}
 
 export function mapAttachment(row: Record<string, unknown>): AttachmentMeta {
   return {
@@ -180,6 +186,7 @@ export function mapAttachment(row: Record<string, unknown>): AttachmentMeta {
     fileName: String(row.file_name),
     fileType: String(row.file_type),
     fileUrl: String(row.file_url),
+    comment: row.comment ? String(row.comment) : null,
     fileSize: row.file_size == null ? null : Number(row.file_size),
     uploadedBy:
       (row.uploader_name ? String(row.uploader_name) : null) ||
