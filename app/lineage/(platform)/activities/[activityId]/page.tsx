@@ -4,6 +4,7 @@ import { ActionForm } from '@/components/domain/ActionForm';
 import { AttachmentsPanel } from '@/components/domain/AttachmentsPanel';
 import { DailyProgressPanel } from '@/components/domain/DailyProgressPanel';
 import { MarkCompletedButton } from '@/components/domain/MarkCompletedButton';
+import { ReopenActivityButton } from '@/components/domain/ReopenActivityButton';
 import { RcaPanel } from '@/components/domain/RcaPanel';
 import { WorkOrdersPanel } from '@/components/domain/WorkOrdersPanel';
 import { PageHeader } from '@/components/layout/PageHeader';
@@ -42,6 +43,9 @@ export default async function ActivityDetailPage({
   const isCompleted = activity.status === 'completed';
   const canComplete = !isCompleted && !isClosed && caps.canComplete;
   const canClose = isCompleted && caps.canClose;
+  const canReopenCompleted = isCompleted && caps.canComplete;
+  const canReopenClosed = isClosed && (caps.canClose || caps.canAdmin);
+  const canReopen = canReopenCompleted || canReopenClosed;
   const canEditRca = (!isClosed && (caps.canUpdate || caps.canClose)) || caps.canAdmin;
   const awaitingSupervisorClose = isCompleted && !caps.canClose;
   const canManageChildren = (!isClosed && caps.canUpdate) || caps.canAdmin;
@@ -167,29 +171,38 @@ export default async function ActivityDetailPage({
               Next status
             </Text>
             <Text size="sm" tone="mute">
-              Open → In Progress → Waiting Parts → Completed → Closed
+              Open → In Progress → Waiting Parts → Completed → Closed. Completed
+              work can be reverted to In Progress if needed.
             </Text>
-            {canComplete ? (
-              <MarkCompletedButton activityId={activity.id} />
-            ) : isClosed ? (
+            {canComplete ? <MarkCompletedButton activityId={activity.id} /> : null}
+            {canReopen ? (
+              <ReopenActivityButton
+                activityId={activity.id}
+                label={isClosed ? 'Reopen to In Progress' : 'Revert to In Progress'}
+              />
+            ) : null}
+            {isCompleted && canClose ? (
               <Text size="sm" tone="mute">
-                Activity is closed.
+                Or use the RCA panel below to close permanently.
               </Text>
-            ) : isCompleted ? (
+            ) : null}
+            {isCompleted && !canReopen && !canClose ? (
               <Text size="sm" tone="mute">
-                {caps.canClose
-                  ? 'Complete — use RCA panel to close.'
-                  : 'Awaiting Supervisor/Admin to close with RCA.'}
+                Awaiting Supervisor/Admin to close with RCA, or reopen.
               </Text>
-            ) : !caps.canComplete ? (
+            ) : null}
+            {isClosed && !canReopen ? (
               <Text size="sm" tone="mute">
-                Your role ({caps.session?.role ?? 'none'}) cannot mark completed.
+                Activity is closed. Supervisor/Admin can reopen if work must resume.
               </Text>
-            ) : (
+            ) : null}
+            {!isCompleted && !isClosed && !canComplete ? (
               <Text size="sm" tone="mute">
-                Use Add update to progress this activity.
+                {caps.canUpdate
+                  ? 'Use Add update to progress this activity.'
+                  : `Your role (${caps.session?.role ?? 'none'}) cannot mark completed.`}
               </Text>
-            )}
+            ) : null}
           </Stack>
         </Surface>
       </div>

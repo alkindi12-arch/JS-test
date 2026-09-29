@@ -429,6 +429,96 @@ export async function markActivityCompletedAction(activityId: string): Promise<A
   redirect(lineagePath(`/activities/${activityId}`));
 }
 
+/** Revert Completed (or Closed for Admin) back to In Progress. */
+export async function reopenActivityAction(activityId: string): Promise<ActionState> {
+  const blocked = requireDb();
+  if (blocked) return blocked;
+  if (!activityId) return { ok: false, error: 'Activity id missing.' };
+
+  const auth = await requirePermission('activities.complete');
+  if (!auth.ok) return auth;
+  const { session, permissions } = auth;
+
+  const pool = getPool();
+  const [actRows] = await pool.query(
+    `SELECT id, equipment_id, status, deleted_at FROM activities WHERE id = :id LIMIT 1`,
+    { id: activityId },
+  );
+  const activity = (
+    actRows as Array<{
+      id: string;
+      equipment_id: string;
+      status: string;
+      deleted_at: unknown;
+    }>
+  )[0];
+  if (!activity || activity.deleted_at) {
+    return { ok: false, error: 'Activity not found.' };
+  }
+
+  if (activity.status === 'in_progress' || activity.status === 'open' || activity.status === 'waiting_parts') {
+    return { ok: false, error: 'Activity is already active.' };
+  }
+  if (activity.status === 'closed' && !can(permissions, 'admin') && !can(permissions, 'activities.close')) {
+    return {
+      ok: false,
+      error: 'Only Supervisor/Admin can reopen a closed activity.',
+    };
+  }
+  if (activity.status !== 'completed' && activity.status !== 'closed') {
+    return { ok: false, error: 'Only completed or closed activities can be reopened.' };
+  }
+
+  const updateDate = new Date().toISOString().slice(0, 10);
+  await pool.query(
+    `
+    UPDATE activities
+    SET status = 'in_progress',
+        end_date = NULL,
+        closed_at = NULL
+    WHERE id = :id
+    `,
+    { id: activityId },
+  );
+
+  await pool.query(
+    `
+    INSERT INTO daily_updates (
+      id, activity_id, update_date, author, updated_by_user_id,
+      progress_notes, findings, condition_check, progress_pct
+    ) VALUES (
+      :id, :activityId, :updateDate, :author, :userId,
+      :notes, NULL, 'unchanged', NULL
+    )
+    `,
+    {
+      id: newUpdateId(activityId),
+      activityId,
+      updateDate,
+      author: session.name,
+      userId: session.id,
+      notes: 'Reopened to In Progress.',
+    },
+  );
+
+  await setEquipmentStatus({
+    equipmentId: activity.equipment_id,
+    nextStatus: 'maintenance',
+    reason: 'activity_reopened',
+    notes: `Reopened ${activityId} to In Progress`,
+    activityId,
+    userId: session.id,
+  });
+
+  revalidatePath(lineagePath('/dashboard'));
+  revalidatePath(lineagePath('/activities'));
+  revalidatePath(lineagePath(`/activities/${activityId}`));
+  revalidatePath(lineagePath(`/equipment/${activity.equipment_id}`));
+  revalidatePath(lineagePath('/reports'));
+
+  redirect(lineagePath(`/activities/${activityId}`));
+}
+
 async function upsertRca(
   activityId: string,
   fields: {
