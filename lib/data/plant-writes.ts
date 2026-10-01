@@ -1,0 +1,1287 @@
+'use server';
+
+import { randomBytes } from 'crypto';
+import { revalidatePath } from 'next/cache';
+import { redirect } from 'next/navigation';
+import { ROTATING_DISCIPLINE, ROTATING_TEAM_ID } from '@/lib/auth/rotating';
+import { can, requirePermission } from '@/lib/auth/permissions';
+import { isDatabaseConfigured, getPool } from '@/lib/db/mysql';
+import { lineagePath } from '@/lib/lineage/paths';
+import { deleteUploadedFile, saveUploadedFile } from '@/lib/uploads/storage';
+import type {
+  ActivityStatus,
+  ActivityType,
+  Discipline,
+  EquipmentStatus,
+  Priority,
+} from '@/lib/types/domain';
+import type { WorkOrderStatus } from '@/lib/types/domain';
+
+export type ActionState = {
+  ok: boolean;
+  error?: string;
+  activityId?: string;
+};
+
+function requireDb(): ActionState | null {
+  if (!isDatabaseConfigured()) {
+    return { ok: false, error: 'Database is not configured on this environment.' };
+  }
+  return null;
+}
+
+function str(form: FormData, key: string): string {
+  const v = form.get(key);
+  return typeof v === 'string' ? v.trim() : '';
+}
+
+function newActivityId(): string {
+  return `ACT-${randomBytes(3).toString('hex').toUpperCase()}`;
+}
+
+function newUpdateId(activityId: string): string {
+  return `UPD-${activityId}-${randomBytes(2).toString('hex').toUpperCase()}`;
+}
+
+function newAttachmentId(activityId: string): string {
+  return `ATT-${activityId}-${randomBytes(2).toString('hex').toUpperCase()}`;
+}
+
+const TYPES = new Set(['breakdown', 'pm', 'inspection', 'routine', 'project']);
+const PRIORITIES = new Set(['low', 'medium', 'high', 'emergency']);
+const CONDITIONS = new Set(['improved', 'unchanged', 'worsened']);
+const EQUIPMENT_STATUSES = new Set(['running', 'standby', 'offline', 'maintenance']);
+const WO_STATUSES = new Set([
+  'planned',
+  'released',
+  'in_progress',
+  'completed',
+  'cancelled',
+]);
+const ACTIVE_ACTIVITY_STATUSES = `('open', 'in_progress', 'waiting_parts')`;
+
+async function resolveTeam(teamIdRaw: string): Promise<{ id: number; discipline: Discipline } | null> {
+  const teamId = Number(teamIdRaw);
+  if (!teamId) return null;
+  const [rows] = await getPool().query(
+    `SELECT id, discipline FROM teams WHERE id = :id LIMIT 1`,
+    { id: teamId },
+  );
+  const row = (rows as Array<{ id: number; discipline: string }>)[0];
+  if (!row) return null;
+  return { id: Number(row.id), discipline: row.discipline as Discipline };
+}
+
+async function setEquipmentStatus(opts: {
+  equipmentId: string;
+  nextStatus: EquipmentStatus;
+  reason: string;
+  notes?: string | null;
+  activityId?: string | null;
+  userId?: number | null;
+}): Promise<boolean> {
+  const pool = getPool();
+  const [rows] = await pool.query(
+    `SELECT id, status FROM equipment WHERE id = :id LIMIT 1`,
+    { id: opts.equipmentId },
+  );
+  const eq = (rows as Array<{ id: string; status: EquipmentStatus }>)[0];
+  if (!eq) return false;
+  if (eq.status === opts.nextStatus) return false;
+
+  await pool.query(
+    `UPDATE equipment SET status = :status WHERE id = :id`,
+    { id: opts.equipmentId, status: opts.nextStatus },
+  );
+
+  await pool.query(
+    `
+    INSERT INTO equipment_status_history (
+      equipment_id, status, previous_status, reason, notes,
+      activity_id, changed_by_user_id, changed_at
+    ) VALUES (
+      :equipmentId, :status, :previousStatus, :reason, :notes,
+      :activityId, :userId, NOW()
+    )
+    `,
+    {
+      equipmentId: opts.equipmentId,
+      status: opts.nextStatus,
+      previousStatus: eq.status,
+      reason: opts.reason,
+      notes: opts.notes ?? null,
+      activityId: opts.activityId ?? null,
+      userId: opts.userId ?? null,
+    },
+  );
+
+  return true;
+}
+
+async function maybeReleaseEquipment(
+  equipmentId: string,
+  activityId: string,
+  userId: number | null,
+): Promise<void> {
+  const pool = getPool();
+  const [rows] = await pool.query(
+    `
+    SELECT COUNT(*) AS n FROM activities
+    WHERE equipment_id = :equipmentId
+      AND status IN ${ACTIVE_ACTIVITY_STATUSES}
+      AND id <> :activityId
+    `,
+    { equipmentId, activityId },
+  );
+  const activeOthers = Number((rows as Array<{ n: number }>)[0]?.n ?? 0);
+  if (activeOthers > 0) return;
+
+  const [eqRows] = await pool.query(
+    `SELECT status FROM equipment WHERE id = :id LIMIT 1`,
+    { id: equipmentId },
+  );
+  const current = (eqRows as Array<{ status: EquipmentStatus }>)[0]?.status;
+  if (current !== 'maintenance' && current !== 'offline') return;
+
+  await setEquipmentStatus({
+    equipmentId,
+    nextStatus: 'running',
+    reason: 'activity_closed',
+    notes: `Released after ${activityId}`,
+    activityId,
+    userId,
+  });
+}
+
+export async function createActivityAction(
+  _prev: ActionState,
+  form: FormData,
+): Promise<ActionState> {
+  const blocked = requireDb();
+  if (blocked) return blocked;
+
+  const auth = await requirePermission('activities.create');
+  if (!auth.ok) return auth;
+  const { session } = auth;
+
+  const title = str(form, 'title');
+  const equipmentId = str(form, 'equipmentId');
+  const type = str(form, 'type');
+  const priority = str(form, 'priority');
+  const description = str(form, 'description');
+  const author = session.name;
+
+  if (!title) return { ok: false, error: 'Title is required.' };
+  if (!equipmentId) return { ok: false, error: 'Equipment is required.' };
+  if (!TYPES.has(type)) return { ok: false, error: 'Invalid activity type.' };
+  if (!PRIORITIES.has(priority)) return { ok: false, error: 'Invalid priority.' };
+
+  // Rotating-only product — ignore any client teamId
+  const team = (await resolveTeam(String(ROTATING_TEAM_ID))) ?? {
+    id: ROTATING_TEAM_ID,
+    discipline: ROTATING_DISCIPLINE,
+  };
+
+  const pool = getPool();
+  const [eqRows] = await pool.query(
+    `SELECT id FROM equipment WHERE id = :id LIMIT 1`,
+    { id: equipmentId },
+  );
+  if (!(eqRows as Array<{ id: string }>).length) {
+    return { ok: false, error: 'Selected equipment was not found.' };
+  }
+
+  const id = newActivityId();
+  const startDate = new Date().toISOString().slice(0, 10);
+
+  await pool.query(
+    `
+    INSERT INTO activities (
+      id, equipment_id, title, activity_type, priority, status,
+      assigned_team, assigned_team_id, start_date, opened_at,
+      created_by, opened_by_user_id
+    ) VALUES (
+      :id, :equipmentId, :title, :type, :priority, 'open',
+      :teamDiscipline, :teamId, :startDate, NOW(),
+      :author, :openedBy
+    )
+    `,
+    {
+      id,
+      equipmentId,
+      title,
+      type: type as ActivityType,
+      priority: priority as Priority,
+      teamDiscipline: team.discipline,
+      teamId: team.id,
+      startDate,
+      author,
+      openedBy: session.id,
+    },
+  );
+
+  if (description) {
+    await pool.query(
+      `
+      INSERT INTO daily_updates (
+        id, activity_id, update_date, author, updated_by_user_id,
+        progress_notes, findings, condition_check, progress_pct
+      ) VALUES (
+        :id, :activityId, :updateDate, :author, :userId,
+        :notes, NULL, 'unchanged', NULL
+      )
+      `,
+      {
+        id: newUpdateId(id),
+        activityId: id,
+        updateDate: startDate,
+        author,
+        userId: session.id,
+        notes: description,
+      },
+    );
+  }
+
+  // Breakdown / active work moves equipment into maintenance when opening
+  if (type === 'breakdown' || type === 'pm' || type === 'project') {
+    await setEquipmentStatus({
+      equipmentId,
+      nextStatus: 'maintenance',
+      reason: 'activity_opened',
+      notes: `Opened ${id}: ${title}`,
+      activityId: id,
+      userId: session.id,
+    });
+  }
+
+  revalidatePath(lineagePath('/dashboard'));
+  revalidatePath(lineagePath('/activities'));
+  revalidatePath(lineagePath(`/equipment/${equipmentId}`));
+
+  redirect(lineagePath(`/activities/${id}`));
+}
+
+export async function addDailyUpdateAction(
+  _prev: ActionState,
+  form: FormData,
+): Promise<ActionState> {
+  const blocked = requireDb();
+  if (blocked) return blocked;
+
+  const auth = await requirePermission('activities.update');
+  if (!auth.ok) return auth;
+  const { session, permissions } = auth;
+
+  const activityId = str(form, 'activityId');
+  const notes = str(form, 'notes');
+  const findings = str(form, 'findings');
+  const condition = str(form, 'condition') || 'unchanged';
+  const author = session.name;
+  const setStatus = str(form, 'setStatus');
+  const progressRaw = str(form, 'progressPct');
+  const progressPct = progressRaw === '' ? null : Number(progressRaw);
+
+  if (!activityId) return { ok: false, error: 'Activity id missing.' };
+  if (!notes) return { ok: false, error: 'Progress notes are required.' };
+  if (!CONDITIONS.has(condition)) return { ok: false, error: 'Invalid condition.' };
+  if (progressPct != null && (Number.isNaN(progressPct) || progressPct < 0 || progressPct > 100)) {
+    return { ok: false, error: 'Progress must be 0–100.' };
+  }
+  if (setStatus === 'completed' && !can(permissions, 'activities.complete')) {
+    return {
+      ok: false,
+      error: 'Not allowed to mark completed. Ask a Supervisor.',
+    };
+  }
+
+  const pool = getPool();
+  const [actRows] = await pool.query(
+    `SELECT id, equipment_id, status FROM activities WHERE id = :id LIMIT 1`,
+    { id: activityId },
+  );
+  const activity = (actRows as Array<{ id: string; equipment_id: string; status: string }>)[0];
+  if (!activity) return { ok: false, error: 'Activity not found.' };
+
+  const updateDate = new Date().toISOString().slice(0, 10);
+  await pool.query(
+    `
+    INSERT INTO daily_updates (
+      id, activity_id, update_date, author, updated_by_user_id,
+      progress_notes, findings, condition_check, progress_pct
+    ) VALUES (
+      :id, :activityId, :updateDate, :author, :userId,
+      :notes, :findings, :condition, :progressPct
+    )
+    `,
+    {
+      id: newUpdateId(activityId),
+      activityId,
+      updateDate,
+      author,
+      userId: session.id,
+      notes,
+      findings: findings || null,
+      condition,
+      progressPct,
+    },
+  );
+
+  let nextStatus: ActivityStatus | null = null;
+  if (setStatus === 'in_progress' && activity.status === 'open') {
+    nextStatus = 'in_progress';
+  } else if (setStatus === 'waiting_parts') {
+    nextStatus = 'waiting_parts';
+  } else if (setStatus === 'completed') {
+    nextStatus = 'completed';
+  } else if (activity.status === 'open') {
+    nextStatus = 'in_progress';
+  }
+
+  if (nextStatus) {
+    await pool.query(
+      `
+      UPDATE activities
+      SET status = :status,
+          end_date = IF(:setEnd = 1, :endDate, end_date),
+          closed_at = IF(:setEnd = 1, COALESCE(closed_at, NOW()), closed_at)
+      WHERE id = :id
+      `,
+      {
+        status: nextStatus,
+        setEnd: nextStatus === 'completed' ? 1 : 0,
+        endDate: updateDate,
+        id: activityId,
+      },
+    );
+
+    if (nextStatus === 'completed') {
+      await maybeReleaseEquipment(activity.equipment_id, activityId, session.id);
+    }
+  }
+
+  revalidatePath(lineagePath('/dashboard'));
+  revalidatePath(lineagePath('/activities'));
+  revalidatePath(lineagePath(`/activities/${activityId}`));
+  revalidatePath(lineagePath(`/equipment/${activity.equipment_id}`));
+
+  redirect(lineagePath(`/activities/${activityId}`));
+}
+
+export async function markActivityCompletedAction(activityId: string): Promise<ActionState> {
+  const blocked = requireDb();
+  if (blocked) return blocked;
+  if (!activityId) return { ok: false, error: 'Activity id missing.' };
+
+  const auth = await requirePermission('activities.complete');
+  if (!auth.ok) return auth;
+  const { session } = auth;
+
+  const pool = getPool();
+  const [actRows] = await pool.query(
+    `SELECT id, equipment_id, status FROM activities WHERE id = :id LIMIT 1`,
+    { id: activityId },
+  );
+  const activity = (actRows as Array<{ id: string; equipment_id: string; status: string }>)[0];
+  if (!activity) return { ok: false, error: 'Activity not found.' };
+  if (activity.status === 'closed') {
+    return { ok: false, error: 'Activity is already closed.' };
+  }
+
+  const endDate = new Date().toISOString().slice(0, 10);
+  await pool.query(
+    `
+    UPDATE activities
+    SET status = 'completed',
+        end_date = :endDate,
+        closed_at = COALESCE(closed_at, NOW())
+    WHERE id = :id
+    `,
+    { id: activityId, endDate },
+  );
+
+  await pool.query(
+    `
+    INSERT INTO daily_updates (
+      id, activity_id, update_date, author, updated_by_user_id,
+      progress_notes, findings, condition_check, progress_pct
+    ) VALUES (
+      :id, :activityId, :updateDate, :author, :userId,
+      :notes, NULL, 'improved', 100
+    )
+    `,
+    {
+      id: newUpdateId(activityId),
+      activityId,
+      updateDate: endDate,
+      author: session.name,
+      userId: session.id,
+      notes: 'Marked completed.',
+    },
+  );
+
+  await maybeReleaseEquipment(activity.equipment_id, activityId, session.id);
+
+  revalidatePath(lineagePath('/dashboard'));
+  revalidatePath(lineagePath('/activities'));
+  revalidatePath(lineagePath(`/activities/${activityId}`));
+  revalidatePath(lineagePath(`/equipment/${activity.equipment_id}`));
+
+  redirect(lineagePath(`/activities/${activityId}`));
+}
+
+/** Revert Completed (or Closed for Admin) back to In Progress. */
+export async function reopenActivityAction(activityId: string): Promise<ActionState> {
+  const blocked = requireDb();
+  if (blocked) return blocked;
+  if (!activityId) return { ok: false, error: 'Activity id missing.' };
+
+  const auth = await requirePermission('activities.complete');
+  if (!auth.ok) return auth;
+  const { session, permissions } = auth;
+
+  const pool = getPool();
+  const [actRows] = await pool.query(
+    `SELECT id, equipment_id, status, deleted_at FROM activities WHERE id = :id LIMIT 1`,
+    { id: activityId },
+  );
+  const activity = (
+    actRows as Array<{
+      id: string;
+      equipment_id: string;
+      status: string;
+      deleted_at: unknown;
+    }>
+  )[0];
+  if (!activity || activity.deleted_at) {
+    return { ok: false, error: 'Activity not found.' };
+  }
+
+  if (activity.status === 'in_progress' || activity.status === 'open' || activity.status === 'waiting_parts') {
+    return { ok: false, error: 'Activity is already active.' };
+  }
+  if (activity.status === 'closed' && !can(permissions, 'admin') && !can(permissions, 'activities.close')) {
+    return {
+      ok: false,
+      error: 'Only Supervisor/Admin can reopen a closed activity.',
+    };
+  }
+  if (activity.status !== 'completed' && activity.status !== 'closed') {
+    return { ok: false, error: 'Only completed or closed activities can be reopened.' };
+  }
+
+  const updateDate = new Date().toISOString().slice(0, 10);
+  await pool.query(
+    `
+    UPDATE activities
+    SET status = 'in_progress',
+        end_date = NULL,
+        closed_at = NULL
+    WHERE id = :id
+    `,
+    { id: activityId },
+  );
+
+  await pool.query(
+    `
+    INSERT INTO daily_updates (
+      id, activity_id, update_date, author, updated_by_user_id,
+      progress_notes, findings, condition_check, progress_pct
+    ) VALUES (
+      :id, :activityId, :updateDate, :author, :userId,
+      :notes, NULL, 'unchanged', NULL
+    )
+    `,
+    {
+      id: newUpdateId(activityId),
+      activityId,
+      updateDate,
+      author: session.name,
+      userId: session.id,
+      notes: 'Reopened to In Progress.',
+    },
+  );
+
+  await setEquipmentStatus({
+    equipmentId: activity.equipment_id,
+    nextStatus: 'maintenance',
+    reason: 'activity_reopened',
+    notes: `Reopened ${activityId} to In Progress`,
+    activityId,
+    userId: session.id,
+  });
+
+  revalidatePath(lineagePath('/dashboard'));
+  revalidatePath(lineagePath('/activities'));
+  revalidatePath(lineagePath(`/activities/${activityId}`));
+  revalidatePath(lineagePath(`/equipment/${activity.equipment_id}`));
+  revalidatePath(lineagePath('/reports'));
+
+  redirect(lineagePath(`/activities/${activityId}`));
+}
+
+async function upsertRca(
+  activityId: string,
+  fields: {
+    failureMode: string | null;
+    rootCause: string | null;
+    correctiveAction: string | null;
+    verifiedByUserId: number | null;
+    verify: boolean;
+  },
+): Promise<void> {
+  await getPool().query(
+    `
+    INSERT INTO root_cause_analysis (
+      activity_id, failure_mode, root_cause, corrective_action,
+      verified_by_user_id, verified_at
+    ) VALUES (
+      :activityId, :failureMode, :rootCause, :correctiveAction,
+      :verifiedBy, IF(:verify = 1, NOW(), NULL)
+    )
+    ON DUPLICATE KEY UPDATE
+      failure_mode = VALUES(failure_mode),
+      root_cause = VALUES(root_cause),
+      corrective_action = VALUES(corrective_action),
+      verified_by_user_id = IF(:verify = 1, VALUES(verified_by_user_id), verified_by_user_id),
+      verified_at = IF(:verify = 1, NOW(), verified_at)
+    `,
+    {
+      activityId,
+      failureMode: fields.failureMode,
+      rootCause: fields.rootCause,
+      correctiveAction: fields.correctiveAction,
+      verifiedBy: fields.verifiedByUserId,
+      verify: fields.verify ? 1 : 0,
+    },
+  );
+
+  // Keep denormalized columns in sync for older readers / reports
+  await getPool().query(
+    `
+    UPDATE activities
+    SET root_cause = :rootCause,
+        corrective_action = :correctiveAction
+    WHERE id = :activityId
+    `,
+    {
+      activityId,
+      rootCause: fields.rootCause,
+      correctiveAction: fields.correctiveAction,
+    },
+  );
+}
+
+export async function saveRcaAction(
+  _prev: ActionState,
+  form: FormData,
+): Promise<ActionState> {
+  const blocked = requireDb();
+  if (blocked) return blocked;
+
+  const auth = await requirePermission('activities.update');
+  if (!auth.ok) return auth;
+  const { session } = auth;
+
+  const activityId = str(form, 'activityId');
+  const failureMode = str(form, 'failureMode') || null;
+  const rootCause = str(form, 'rootCause') || null;
+  const correctiveAction = str(form, 'correctiveAction') || null;
+  // Only supervisors/admins may verify via close flow; ignore verify from non-closers
+  const verifyRequested = str(form, 'verify') === '1';
+  const verify = verifyRequested && can(auth.permissions, 'activities.close');
+
+  if (!activityId) return { ok: false, error: 'Activity id missing.' };
+  if (!failureMode && !rootCause && !correctiveAction) {
+    return { ok: false, error: 'Enter at least one RCA field.' };
+  }
+
+  const pool = getPool();
+  const [actRows] = await pool.query(
+    `SELECT id, equipment_id FROM activities WHERE id = :id LIMIT 1`,
+    { id: activityId },
+  );
+  const activity = (actRows as Array<{ id: string; equipment_id: string }>)[0];
+  if (!activity) return { ok: false, error: 'Activity not found.' };
+
+  await upsertRca(activityId, {
+    failureMode,
+    rootCause,
+    correctiveAction,
+    verifiedByUserId: verify ? session.id : null,
+    verify,
+  });
+
+  revalidatePath(lineagePath(`/activities/${activityId}`));
+  revalidatePath(lineagePath(`/equipment/${activity.equipment_id}`));
+
+  redirect(lineagePath(`/activities/${activityId}`));
+}
+
+export async function closeActivityAction(
+  _prev: ActionState,
+  form: FormData,
+): Promise<ActionState> {
+  const blocked = requireDb();
+  if (blocked) return blocked;
+
+  const auth = await requirePermission('activities.close');
+  if (!auth.ok) return auth;
+  const { session } = auth;
+
+  const activityId = str(form, 'activityId');
+  const failureMode = str(form, 'failureMode') || null;
+  const rootCause = str(form, 'rootCause') || null;
+  const correctiveAction = str(form, 'correctiveAction') || null;
+  const closingNotes = str(form, 'closingNotes') || null;
+
+  if (!activityId) return { ok: false, error: 'Activity id missing.' };
+  if (!rootCause) return { ok: false, error: 'Root cause is required to close.' };
+  if (!correctiveAction) {
+    return { ok: false, error: 'Corrective action is required to close.' };
+  }
+
+  const pool = getPool();
+  const [actRows] = await pool.query(
+    `SELECT id, equipment_id, status FROM activities WHERE id = :id LIMIT 1`,
+    { id: activityId },
+  );
+  const activity = (actRows as Array<{ id: string; equipment_id: string; status: string }>)[0];
+  if (!activity) return { ok: false, error: 'Activity not found.' };
+  if (activity.status === 'closed') {
+    return { ok: false, error: 'Activity is already closed.' };
+  }
+
+  await upsertRca(activityId, {
+    failureMode,
+    rootCause,
+    correctiveAction,
+    verifiedByUserId: session.id,
+    verify: true,
+  });
+
+  const endDate = new Date().toISOString().slice(0, 10);
+  await pool.query(
+    `
+    UPDATE activities
+    SET status = 'closed',
+        end_date = COALESCE(end_date, :endDate),
+        closed_at = COALESCE(closed_at, NOW()),
+        closing_notes = COALESCE(:closingNotes, closing_notes)
+    WHERE id = :id
+    `,
+    { id: activityId, endDate, closingNotes },
+  );
+
+  await pool.query(
+    `
+    INSERT INTO daily_updates (
+      id, activity_id, update_date, author, updated_by_user_id,
+      progress_notes, findings, condition_check, progress_pct
+    ) VALUES (
+      :id, :activityId, :updateDate, :author, :userId,
+      :notes, NULL, 'improved', 100
+    )
+    `,
+    {
+      id: newUpdateId(activityId),
+      activityId,
+      updateDate: endDate,
+      author: session.name,
+      userId: session.id,
+      notes: closingNotes || 'Activity closed with RCA verified.',
+    },
+  );
+
+  await maybeReleaseEquipment(activity.equipment_id, activityId, session.id);
+
+  revalidatePath(lineagePath('/dashboard'));
+  revalidatePath(lineagePath('/activities'));
+  revalidatePath(lineagePath(`/activities/${activityId}`));
+  revalidatePath(lineagePath(`/equipment/${activity.equipment_id}`));
+
+  redirect(lineagePath(`/activities/${activityId}`));
+}
+
+export async function setEquipmentStatusAction(
+  _prev: ActionState,
+  form: FormData,
+): Promise<ActionState> {
+  const blocked = requireDb();
+  if (blocked) return blocked;
+
+  const auth = await requirePermission('equipment.write');
+  if (!auth.ok) return auth;
+  const { session } = auth;
+
+  const equipmentId = str(form, 'equipmentId');
+  const nextStatus = str(form, 'status');
+  const notes = str(form, 'notes') || null;
+
+  if (!equipmentId) return { ok: false, error: 'Equipment id missing.' };
+  if (!EQUIPMENT_STATUSES.has(nextStatus)) {
+    return { ok: false, error: 'Invalid equipment status.' };
+  }
+
+  const changed = await setEquipmentStatus({
+    equipmentId,
+    nextStatus: nextStatus as EquipmentStatus,
+    reason: 'manual',
+    notes,
+    activityId: null,
+    userId: session.id,
+  });
+
+  if (!changed) {
+    return { ok: false, error: 'Status is already set to that value.' };
+  }
+
+  revalidatePath(lineagePath('/equipment'));
+  revalidatePath(lineagePath(`/equipment/${equipmentId}`));
+  revalidatePath(lineagePath('/dashboard'));
+
+  redirect(lineagePath(`/equipment/${equipmentId}`));
+}
+
+export async function attachWorkOrderAction(
+  _prev: ActionState,
+  form: FormData,
+): Promise<ActionState> {
+  const blocked = requireDb();
+  if (blocked) return blocked;
+
+  const auth = await requirePermission('activities.write');
+  if (!auth.ok) return auth;
+  const { session } = auth;
+
+  const activityId = str(form, 'activityId');
+  const externalRef = str(form, 'externalRef');
+  const title = str(form, 'title') || null;
+  const status = str(form, 'status') || 'planned';
+  const plannedStart = str(form, 'plannedStart') || null;
+  const plannedFinish = str(form, 'plannedFinish') || null;
+  const notes = str(form, 'notes') || null;
+
+  if (!activityId) return { ok: false, error: 'Activity id missing.' };
+  if (!externalRef) return { ok: false, error: 'External WO reference is required.' };
+  if (externalRef.length > 64) return { ok: false, error: 'WO reference is too long.' };
+  if (!WO_STATUSES.has(status)) return { ok: false, error: 'Invalid work order status.' };
+
+  const pool = getPool();
+  const [actRows] = await pool.query(
+    `SELECT id, equipment_id FROM activities WHERE id = :id LIMIT 1`,
+    { id: activityId },
+  );
+  const activity = (actRows as Array<{ id: string; equipment_id: string }>)[0];
+  if (!activity) return { ok: false, error: 'Activity not found.' };
+
+  try {
+    await pool.query(
+      `
+      INSERT INTO work_orders (
+        activity_id, external_ref, title, status,
+        planned_start, planned_finish, notes, created_by_user_id
+      ) VALUES (
+        :activityId, :externalRef, :title, :status,
+        :plannedStart, :plannedFinish, :notes, :userId
+      )
+      `,
+      {
+        activityId,
+        externalRef,
+        title,
+        status: status as WorkOrderStatus,
+        plannedStart,
+        plannedFinish,
+        notes,
+        userId: session.id,
+      },
+    );
+  } catch (err) {
+    const code = (err as { code?: string }).code;
+    if (code === 'ER_DUP_ENTRY') {
+      return { ok: false, error: 'That WO reference is already linked.' };
+    }
+    throw err;
+  }
+
+  revalidatePath(lineagePath('/activities'));
+  revalidatePath(lineagePath(`/activities/${activityId}`));
+  revalidatePath(lineagePath('/dashboard'));
+
+  redirect(lineagePath(`/activities/${activityId}`));
+}
+
+export async function updateWorkOrderStatusAction(
+  _prev: ActionState,
+  form: FormData,
+): Promise<ActionState> {
+  const blocked = requireDb();
+  if (blocked) return blocked;
+
+  const auth = await requirePermission('activities.write');
+  if (!auth.ok) return auth;
+
+  const workOrderId = Number(str(form, 'workOrderId'));
+  const status = str(form, 'status');
+  const activityId = str(form, 'activityId');
+
+  if (!workOrderId) return { ok: false, error: 'Work order id missing.' };
+  if (!WO_STATUSES.has(status)) return { ok: false, error: 'Invalid work order status.' };
+  if (!activityId) return { ok: false, error: 'Activity id missing.' };
+
+  const pool = getPool();
+  const [result] = await pool.query(
+    `
+    UPDATE work_orders
+    SET status = :status
+    WHERE id = :id AND activity_id = :activityId
+    `,
+    { id: workOrderId, status, activityId },
+  );
+  const affected = Number((result as { affectedRows?: number }).affectedRows ?? 0);
+  if (!affected) return { ok: false, error: 'Work order not found.' };
+
+  revalidatePath(lineagePath(`/activities/${activityId}`));
+  revalidatePath(lineagePath('/activities'));
+
+  redirect(lineagePath(`/activities/${activityId}`));
+}
+
+export async function uploadAttachmentAction(
+  _prev: ActionState,
+  form: FormData,
+): Promise<ActionState> {
+  const blocked = requireDb();
+  if (blocked) return blocked;
+
+  const auth = await requirePermission('activities.update');
+  if (!auth.ok) return auth;
+  const { session } = auth;
+
+  const activityId = str(form, 'activityId');
+  const comment = str(form, 'comment') || null;
+  const file = form.get('file');
+
+  if (!activityId) return { ok: false, error: 'Activity id missing.' };
+  if (!(file instanceof File)) return { ok: false, error: 'Choose a file to upload.' };
+  if (comment && comment.length > 2000) {
+    return { ok: false, error: 'Comment is too long (max 2000 characters).' };
+  }
+
+  const pool = getPool();
+  const [actRows] = await pool.query(
+    `SELECT id, equipment_id, status, deleted_at FROM activities WHERE id = :id LIMIT 1`,
+    { id: activityId },
+  );
+  const activity = (
+    actRows as Array<{
+      id: string;
+      equipment_id: string;
+      status: string;
+      deleted_at: unknown;
+    }>
+  )[0];
+  if (!activity || activity.deleted_at) return { ok: false, error: 'Activity not found.' };
+  const isAdmin = can(auth.permissions, 'admin');
+  if (activity.status === 'closed' && !isAdmin) {
+    return { ok: false, error: 'Cannot attach files to a closed activity.' };
+  }
+
+  const saved = await saveUploadedFile({ activityId, file });
+  if (!saved.ok) return { ok: false, error: saved.error };
+
+  const originalName = file.name.slice(0, 255) || saved.storedName;
+  await pool.query(
+    `
+    INSERT INTO attachments (
+      id, activity_id, update_id, file_name, file_type, file_size,
+      file_url, comment, uploaded_by, uploaded_by_user_id
+    ) VALUES (
+      :id, :activityId, NULL, :fileName, :fileType, :fileSize,
+      :fileUrl, :comment, :uploadedBy, :userId
+    )
+    `,
+    {
+      id: newAttachmentId(activityId),
+      activityId,
+      fileName: originalName,
+      fileType: file.type || 'application/octet-stream',
+      fileSize: saved.bytes,
+      fileUrl: saved.relativeUrl,
+      comment,
+      uploadedBy: session.name,
+      userId: session.id,
+    },
+  );
+
+  revalidatePath(lineagePath(`/activities/${activityId}`));
+  revalidatePath(lineagePath(`/equipment/${activity.equipment_id}`));
+  revalidatePath(lineagePath(`/reports/${activityId}`));
+
+  redirect(lineagePath(`/activities/${activityId}`));
+}
+
+export async function updateAttachmentCommentAction(
+  _prev: ActionState,
+  form: FormData,
+): Promise<ActionState> {
+  const blocked = requireDb();
+  if (blocked) return blocked;
+
+  const auth = await requirePermission('activities.update');
+  if (!auth.ok) return auth;
+  const isAdmin = can(auth.permissions, 'admin');
+
+  const attachmentId = str(form, 'attachmentId');
+  const activityId = str(form, 'activityId');
+  const comment = str(form, 'comment') || null;
+
+  if (!attachmentId || !activityId) {
+    return { ok: false, error: 'Attachment id missing.' };
+  }
+  if (comment && comment.length > 2000) {
+    return { ok: false, error: 'Comment is too long (max 2000 characters).' };
+  }
+
+  const pool = getPool();
+  const [actRows] = await pool.query(
+    `SELECT id, status, deleted_at FROM activities WHERE id = :id LIMIT 1`,
+    { id: activityId },
+  );
+  const activity = (
+    actRows as Array<{ id: string; status: string; deleted_at: unknown }>
+  )[0];
+  if (!activity || activity.deleted_at) {
+    return { ok: false, error: 'Activity not found.' };
+  }
+  if (activity.status === 'closed' && !isAdmin) {
+    return { ok: false, error: 'Cannot edit comments on a closed activity.' };
+  }
+
+  const [result] = await pool.query(
+    `
+    UPDATE attachments
+    SET comment = :comment
+    WHERE id = :id AND activity_id = :activityId
+    `,
+    { id: attachmentId, activityId, comment },
+  );
+  const affected = Number((result as { affectedRows?: number }).affectedRows ?? 0);
+  if (!affected) return { ok: false, error: 'Attachment not found.' };
+
+  revalidatePath(lineagePath(`/activities/${activityId}`));
+  revalidatePath(lineagePath(`/reports/${activityId}`));
+  redirect(lineagePath(`/activities/${activityId}`));
+}
+
+export async function updateActivityAction(
+  _prev: ActionState,
+  form: FormData,
+): Promise<ActionState> {
+  const blocked = requireDb();
+  if (blocked) return blocked;
+
+  const auth = await requirePermission('admin');
+  if (!auth.ok) return auth;
+
+  const activityId = str(form, 'activityId');
+  const title = str(form, 'title');
+  const equipmentId = str(form, 'equipmentId');
+  const type = str(form, 'type');
+  const priority = str(form, 'priority');
+
+  if (!activityId) return { ok: false, error: 'Activity id missing.' };
+  if (!title) return { ok: false, error: 'Title is required.' };
+  if (!equipmentId) return { ok: false, error: 'Equipment is required.' };
+  if (!TYPES.has(type)) return { ok: false, error: 'Invalid activity type.' };
+  if (!PRIORITIES.has(priority)) return { ok: false, error: 'Invalid priority.' };
+
+  const pool = getPool();
+  const [actRows] = await pool.query(
+    `SELECT id, equipment_id, deleted_at FROM activities WHERE id = :id LIMIT 1`,
+    { id: activityId },
+  );
+  const activity = (
+    actRows as Array<{ id: string; equipment_id: string; deleted_at: unknown }>
+  )[0];
+  if (!activity || activity.deleted_at) {
+    return { ok: false, error: 'Activity not found.' };
+  }
+
+  const [eqRows] = await pool.query(
+    `SELECT id FROM equipment WHERE id = :id LIMIT 1`,
+    { id: equipmentId },
+  );
+  if (!(eqRows as Array<{ id: string }>).length) {
+    return { ok: false, error: 'Selected equipment was not found.' };
+  }
+
+  await pool.query(
+    `
+    UPDATE activities
+    SET title = :title,
+        equipment_id = :equipmentId,
+        activity_type = :type,
+        priority = :priority,
+        assigned_team = :teamDiscipline,
+        assigned_team_id = :teamId
+    WHERE id = :id AND deleted_at IS NULL
+    `,
+    {
+      id: activityId,
+      title,
+      equipmentId,
+      type: type as ActivityType,
+      priority: priority as Priority,
+      teamDiscipline: ROTATING_DISCIPLINE,
+      teamId: ROTATING_TEAM_ID,
+    },
+  );
+
+  revalidatePath(lineagePath('/activities'));
+  revalidatePath(lineagePath('/dashboard'));
+  revalidatePath(lineagePath(`/activities/${activityId}`));
+  revalidatePath(lineagePath(`/equipment/${equipmentId}`));
+  if (activity.equipment_id !== equipmentId) {
+    revalidatePath(lineagePath(`/equipment/${activity.equipment_id}`));
+  }
+
+  redirect(lineagePath(`/activities/${activityId}`));
+}
+
+export async function deleteActivityAction(
+  _prev: ActionState,
+  form: FormData,
+): Promise<ActionState> {
+  const blocked = requireDb();
+  if (blocked) return blocked;
+
+  const auth = await requirePermission('admin');
+  if (!auth.ok) return auth;
+
+  const activityId = str(form, 'activityId');
+  if (!activityId) return { ok: false, error: 'Activity id missing.' };
+
+  const pool = getPool();
+  const [actRows] = await pool.query(
+    `SELECT id, equipment_id, deleted_at FROM activities WHERE id = :id LIMIT 1`,
+    { id: activityId },
+  );
+  const activity = (
+    actRows as Array<{ id: string; equipment_id: string; deleted_at: unknown }>
+  )[0];
+  if (!activity || activity.deleted_at) {
+    return { ok: false, error: 'Activity not found.' };
+  }
+
+  await pool.query(`UPDATE activities SET deleted_at = NOW() WHERE id = :id`, {
+    id: activityId,
+  });
+
+  revalidatePath(lineagePath('/activities'));
+  revalidatePath(lineagePath('/dashboard'));
+  revalidatePath(lineagePath(`/equipment/${activity.equipment_id}`));
+  revalidatePath(lineagePath('/reports'));
+
+  redirect(lineagePath('/activities'));
+}
+
+export async function updateDailyUpdateAction(
+  _prev: ActionState,
+  form: FormData,
+): Promise<ActionState> {
+  const blocked = requireDb();
+  if (blocked) return blocked;
+
+  const auth = await requirePermission('activities.update');
+  if (!auth.ok) return auth;
+  const { session, permissions } = auth;
+  const isAdmin = can(permissions, 'admin');
+
+  const updateId = str(form, 'updateId');
+  const activityId = str(form, 'activityId');
+  const notes = str(form, 'notes');
+  const findings = str(form, 'findings') || null;
+  const condition = str(form, 'condition') || 'unchanged';
+  const progressRaw = str(form, 'progressPct');
+  const progressPct = progressRaw === '' ? null : Number(progressRaw);
+
+  if (!updateId || !activityId) return { ok: false, error: 'Update id missing.' };
+  if (!notes) return { ok: false, error: 'Progress notes are required.' };
+  if (!CONDITIONS.has(condition)) return { ok: false, error: 'Invalid condition.' };
+  if (progressPct != null && (Number.isNaN(progressPct) || progressPct < 0 || progressPct > 100)) {
+    return { ok: false, error: 'Progress must be 0–100.' };
+  }
+
+  const pool = getPool();
+  const [actRows] = await pool.query(
+    `SELECT id, status, deleted_at FROM activities WHERE id = :id LIMIT 1`,
+    { id: activityId },
+  );
+  const activity = (
+    actRows as Array<{ id: string; status: string; deleted_at: unknown }>
+  )[0];
+  if (!activity || activity.deleted_at) {
+    return { ok: false, error: 'Activity not found.' };
+  }
+  if (activity.status === 'closed' && !isAdmin) {
+    return { ok: false, error: 'Cannot edit updates on a closed activity.' };
+  }
+
+  const [result] = await pool.query(
+    `
+    UPDATE daily_updates
+    SET progress_notes = :notes,
+        findings = :findings,
+        condition_check = :condition,
+        progress_pct = :progressPct,
+        author = :author,
+        updated_by_user_id = :userId
+    WHERE id = :id AND activity_id = :activityId
+    `,
+    {
+      id: updateId,
+      activityId,
+      notes,
+      findings,
+      condition,
+      progressPct,
+      author: session.name,
+      userId: session.id,
+    },
+  );
+  const affected = Number((result as { affectedRows?: number }).affectedRows ?? 0);
+  if (!affected) return { ok: false, error: 'Daily update not found.' };
+
+  revalidatePath(lineagePath(`/activities/${activityId}`));
+  redirect(lineagePath(`/activities/${activityId}`));
+}
+
+export async function deleteDailyUpdateAction(
+  _prev: ActionState,
+  form: FormData,
+): Promise<ActionState> {
+  const blocked = requireDb();
+  if (blocked) return blocked;
+
+  const auth = await requirePermission('activities.update');
+  if (!auth.ok) return auth;
+  const isAdmin = can(auth.permissions, 'admin');
+
+  const updateId = str(form, 'updateId');
+  const activityId = str(form, 'activityId');
+  if (!updateId || !activityId) return { ok: false, error: 'Update id missing.' };
+
+  const pool = getPool();
+  const [actRows] = await pool.query(
+    `SELECT id, status, deleted_at FROM activities WHERE id = :id LIMIT 1`,
+    { id: activityId },
+  );
+  const activity = (
+    actRows as Array<{ id: string; status: string; deleted_at: unknown }>
+  )[0];
+  if (!activity || activity.deleted_at) {
+    return { ok: false, error: 'Activity not found.' };
+  }
+  if (activity.status === 'closed' && !isAdmin) {
+    return { ok: false, error: 'Cannot delete updates on a closed activity.' };
+  }
+
+  const [result] = await pool.query(
+    `DELETE FROM daily_updates WHERE id = :id AND activity_id = :activityId`,
+    { id: updateId, activityId },
+  );
+  const affected = Number((result as { affectedRows?: number }).affectedRows ?? 0);
+  if (!affected) return { ok: false, error: 'Daily update not found.' };
+
+  revalidatePath(lineagePath(`/activities/${activityId}`));
+  redirect(lineagePath(`/activities/${activityId}`));
+}
+
+export async function deleteAttachmentAction(
+  _prev: ActionState,
+  form: FormData,
+): Promise<ActionState> {
+  const blocked = requireDb();
+  if (blocked) return blocked;
+
+  const auth = await requirePermission('activities.update');
+  if (!auth.ok) return auth;
+  const isAdmin = can(auth.permissions, 'admin');
+
+  const attachmentId = str(form, 'attachmentId');
+  const activityId = str(form, 'activityId');
+  if (!attachmentId || !activityId) {
+    return { ok: false, error: 'Attachment id missing.' };
+  }
+
+  const pool = getPool();
+  const [actRows] = await pool.query(
+    `SELECT id, status, deleted_at FROM activities WHERE id = :id LIMIT 1`,
+    { id: activityId },
+  );
+  const activity = (
+    actRows as Array<{ id: string; status: string; deleted_at: unknown }>
+  )[0];
+  if (!activity || activity.deleted_at) {
+    return { ok: false, error: 'Activity not found.' };
+  }
+  if (activity.status === 'closed' && !isAdmin) {
+    return { ok: false, error: 'Cannot delete files on a closed activity.' };
+  }
+
+  const [attRows] = await pool.query(
+    `SELECT id, file_url FROM attachments WHERE id = :id AND activity_id = :activityId LIMIT 1`,
+    { id: attachmentId, activityId },
+  );
+  const att = (attRows as Array<{ id: string; file_url: string }>)[0];
+  if (!att) return { ok: false, error: 'Attachment not found.' };
+
+  await pool.query(`DELETE FROM attachments WHERE id = :id`, { id: attachmentId });
+  await deleteUploadedFile(att.file_url);
+
+  revalidatePath(lineagePath(`/activities/${activityId}`));
+  redirect(lineagePath(`/activities/${activityId}`));
+}
+
+export async function deleteWorkOrderAction(
+  _prev: ActionState,
+  form: FormData,
+): Promise<ActionState> {
+  const blocked = requireDb();
+  if (blocked) return blocked;
+
+  const auth = await requirePermission('activities.update');
+  if (!auth.ok) return auth;
+  const isAdmin = can(auth.permissions, 'admin');
+
+  const workOrderId = Number(str(form, 'workOrderId'));
+  const activityId = str(form, 'activityId');
+  if (!workOrderId || !activityId) return { ok: false, error: 'Work order id missing.' };
+
+  const pool = getPool();
+  const [actRows] = await pool.query(
+    `SELECT id, status, deleted_at FROM activities WHERE id = :id LIMIT 1`,
+    { id: activityId },
+  );
+  const activity = (
+    actRows as Array<{ id: string; status: string; deleted_at: unknown }>
+  )[0];
+  if (!activity || activity.deleted_at) {
+    return { ok: false, error: 'Activity not found.' };
+  }
+  if (activity.status === 'closed' && !isAdmin) {
+    return { ok: false, error: 'Cannot remove work orders on a closed activity.' };
+  }
+
+  const [result] = await pool.query(
+    `DELETE FROM work_orders WHERE id = :id AND activity_id = :activityId`,
+    { id: workOrderId, activityId },
+  );
+  const affected = Number((result as { affectedRows?: number }).affectedRows ?? 0);
+  if (!affected) return { ok: false, error: 'Work order not found.' };
+
+  revalidatePath(lineagePath(`/activities/${activityId}`));
+  revalidatePath(lineagePath('/activities'));
+  redirect(lineagePath(`/activities/${activityId}`));
+}
