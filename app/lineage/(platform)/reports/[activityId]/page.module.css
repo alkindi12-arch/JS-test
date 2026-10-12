@@ -2,6 +2,11 @@
   /* visible on screen only */
 }
 
+.printHint {
+  margin: calc(var(--space-2) * -1) 0 var(--space-2);
+  max-width: 40rem;
+}
+
 .report {
   background: #fff;
   border: 1px solid var(--color-line);
@@ -329,7 +334,8 @@
   .report {
     border: 0;
     border-radius: 0;
-    padding: 0;
+    /* Page margins live here because @page margin is 0 (hides browser header/footer). */
+    padding: 14mm 12mm;
     background: white;
     color: black;
     box-shadow: none;

@@ -98,14 +98,15 @@ export default async function ActivityReportPage({
             </>
           }
         />
+        <Text size="xs" tone="faint" className={styles.printHint}>
+          Tip: turn off “Headers and footers” in the print dialog so the date, title, and
+          URL are not added to the PDF.
+        </Text>
       </div>
 
       <article className={`animate-fade-up ${styles.report}`}>
         <header className={styles.cover}>
           <div className={styles.coverBrand}>
-            <Text size="xs" tone="mute" className={styles.eyebrow}>
-              Alkinda · Lineage Equipment History
-            </Text>
             <Text as="h1" display size="2xl" className={styles.coverTitle}>
               {activity.title}
             </Text>

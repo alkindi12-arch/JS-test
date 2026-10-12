@@ -85,13 +85,21 @@ ol {
   scrollbar-color: var(--color-line-strong) transparent;
 }
 
+/* Zero @page margin suppresses Chrome/Edge date·title header and URL footer. */
+@page {
+  margin: 0;
+}
+
 @media print {
   [data-print-hide] {
     display: none !important;
   }
 
+  html,
   body {
-    background: white;
+    background: white !important;
+    margin: 0 !important;
+    padding: 0 !important;
   }
 
   .atmosphere-grid {
