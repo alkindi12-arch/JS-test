@@ -10,7 +10,24 @@ import {
 } from '@/lib/format';
 import { isImageAttachment } from '@/lib/data/mappers';
 import { getActivityReportPack } from '@/lib/data/plant';
+import type { DailyUpdate } from '@/lib/types/domain';
 import styles from './page.module.css';
+
+/** System lifecycle notes — useful on the activity page, not in print reports. */
+const SYSTEM_UPDATE_NOTES = new Set([
+  'Reopened to In Progress.',
+  'Marked completed.',
+  'Activity closed with RCA verified.',
+]);
+
+function isSystemUpdate(u: DailyUpdate): boolean {
+  const notes = (u.notes ?? '').trim();
+  if (SYSTEM_UPDATE_NOTES.has(notes)) return true;
+  if (/^Activity closed with RCA/i.test(notes)) return true;
+  if (/^Reopened to In Progress/i.test(notes)) return true;
+  if (/^Marked completed\.?$/i.test(notes)) return true;
+  return false;
+}
 
 export default async function ActivityReportPage({
   params,
@@ -23,6 +40,26 @@ export default async function ActivityReportPage({
 
   const { activity, equipment, updates, attachments, rca, workOrders } = pack;
   const generatedAt = new Date().toISOString().replace('T', ' ').slice(0, 19);
+
+  const reportUpdates = updates.filter((u) => !isSystemUpdate(u));
+  const findings = reportUpdates
+    .map((u) => ({
+      id: u.id,
+      date: u.date,
+      author: u.author,
+      text: (u.findings ?? '').trim(),
+    }))
+    .filter((f) => f.text.length > 0);
+
+  const photoAttachments = attachments.filter(
+    (f) => isImageAttachment(f) && f.fileUrl && f.fileUrl !== '#',
+  );
+  const otherAttachments = attachments.filter(
+    (f) => !isImageAttachment(f) || !f.fileUrl || f.fileUrl === '#',
+  );
+
+  const opened = activity.openedAt ?? activity.startDate;
+  const closed = activity.closedAt ?? '—';
 
   return (
     <Stack gap={6}>
@@ -47,17 +84,60 @@ export default async function ActivityReportPage({
       </div>
 
       <article className={`animate-fade-up ${styles.report}`}>
-        <header className={styles.reportHeader}>
-          <Text as="h1" display size="2xl">
-            Lineage activity report
-          </Text>
-          <Text size="sm" tone="mute">
-            Generated {generatedAt} · Alkinda / Lineage
-          </Text>
+        <header className={styles.cover}>
+          <div className={styles.coverBrand}>
+            <Text size="xs" tone="mute" className={styles.eyebrow}>
+              Alkinda · Lineage Equipment History
+            </Text>
+            <Text as="h1" display size="2xl" className={styles.coverTitle}>
+              {activity.title}
+            </Text>
+            <Text size="sm" tone="mute">
+              Activity report · {activity.id}
+            </Text>
+          </div>
+          <div className={styles.coverMeta}>
+            <div>
+              <span className={styles.metaLabel}>Equipment</span>
+              <span className={styles.metaValue}>
+                {equipment.tagNumber}
+                <span className={styles.metaSub}> · {equipment.description}</span>
+              </span>
+            </div>
+            <div>
+              <span className={styles.metaLabel}>Period</span>
+              <span className={styles.metaValue}>
+                {opened} → {closed}
+              </span>
+            </div>
+            <div>
+              <span className={styles.metaLabel}>Duration</span>
+              <span className={styles.metaValue}>
+                {pack.durationDays == null ? '—' : `${pack.durationDays} day(s)`}
+              </span>
+            </div>
+            <div>
+              <span className={styles.metaLabel}>Team</span>
+              <span className={styles.metaValue}>{activity.team}</span>
+            </div>
+          </div>
+          <div className={styles.badges}>
+            <Badge tone="accent">{labelActivityStatus(activity.status)}</Badge>
+            <Badge>{labelActivityType(activity.type)}</Badge>
+            <Badge
+              tone={
+                activity.priority === 'high' || activity.priority === 'emergency'
+                  ? 'danger'
+                  : 'signal'
+              }
+            >
+              {activity.priority}
+            </Badge>
+          </div>
         </header>
 
         <section className={styles.section}>
-          <Text as="h2" display size="xl">
+          <Text as="h2" display size="xl" className={styles.sectionTitle}>
             1. Equipment
           </Text>
           <dl className={styles.grid}>
@@ -84,81 +164,63 @@ export default async function ActivityReportPage({
             <div>
               <dt>Make / Model</dt>
               <dd>
-                {equipment.make ?? '—'} {equipment.model ? `· ${equipment.model}` : ''}
+                {equipment.make ?? '—'}
+                {equipment.model ? ` · ${equipment.model}` : ''}
               </dd>
             </div>
           </dl>
         </section>
 
         <section className={styles.section}>
-          <Text as="h2" display size="xl">
-            2. Activity
+          <Text as="h2" display size="xl" className={styles.sectionTitle}>
+            2. Activity summary
           </Text>
           <dl className={styles.grid}>
             <div>
-              <dt>ID / Title</dt>
+              <dt>ID</dt>
+              <dd>{activity.id}</dd>
+            </div>
+            <div>
+              <dt>Type / Priority</dt>
               <dd>
-                {activity.id} — {activity.title}
+                {labelActivityType(activity.type)} · {activity.priority}
               </dd>
             </div>
             <div>
-              <dt>Type / Priority / Status</dt>
-              <dd>
-                {labelActivityType(activity.type)} · {activity.priority} ·{' '}
-                {labelActivityStatus(activity.status)}
-              </dd>
-            </div>
-            <div>
-              <dt>Team</dt>
-              <dd>{activity.team}</dd>
+              <dt>Status</dt>
+              <dd>{labelActivityStatus(activity.status)}</dd>
             </div>
             <div>
               <dt>Opened / Closed</dt>
               <dd>
-                {activity.openedAt ?? activity.startDate}
-                {' → '}
-                {activity.closedAt ?? '—'}
-              </dd>
-            </div>
-            <div>
-              <dt>Duration</dt>
-              <dd>
-                {pack.durationDays == null ? '—' : `${pack.durationDays} day(s)`}
+                {opened} → {closed}
               </dd>
             </div>
           </dl>
-          <div className={styles.badges}>
-            <Badge tone="accent">{labelActivityStatus(activity.status)}</Badge>
-            <Badge>{labelActivityType(activity.type)}</Badge>
-            <Badge
-              tone={
-                activity.priority === 'high' || activity.priority === 'emergency'
-                  ? 'danger'
-                  : 'signal'
-              }
-            >
-              {activity.priority}
-            </Badge>
-          </div>
         </section>
 
         <section className={styles.section}>
-          <Text as="h2" display size="xl">
-            3. Daily updates
+          <Text as="h2" display size="xl" className={styles.sectionTitle}>
+            3. Findings
           </Text>
-          {updates.length === 0 ? (
+          {findings.length === 0 ? (
             <Text size="sm" tone="mute">
-              No updates recorded.
+              No findings recorded.
             </Text>
           ) : (
-            <ol className={styles.timeline}>
-              {updates.map((u) => (
-                <li key={u.id}>
-                  <Text size="xs" tone="mute">
-                    {u.date} · {u.author}
-                    {u.progressPct != null ? ` · ${u.progressPct}%` : ''}
+            <ol className={styles.findings}>
+              {findings.map((f, index) => (
+                <li key={f.id}>
+                  <div className={styles.findingHead}>
+                    <span className={styles.findingIndex}>{index + 1}</span>
+                    <Text size="xs" tone="mute">
+                      {f.date}
+                      {f.author ? ` · ${f.author}` : ''}
+                    </Text>
+                  </div>
+                  <Text size="sm" className={styles.findingBody}>
+                    {f.text}
                   </Text>
-                  <Text size="sm">{u.notes}</Text>
                 </li>
               ))}
             </ol>
@@ -166,72 +228,93 @@ export default async function ActivityReportPage({
         </section>
 
         <section className={styles.section}>
-          <Text as="h2" display size="xl">
-            4. Photos & attachments
+          <Text as="h2" display size="xl" className={styles.sectionTitle}>
+            4. Daily progress
           </Text>
-          {attachments.length === 0 ? (
+          {reportUpdates.length === 0 ? (
             <Text size="sm" tone="mute">
-              No attachments.
+              No progress updates recorded.
             </Text>
           ) : (
-            <>
-              {attachments.some((f) => isImageAttachment(f) && f.fileUrl && f.fileUrl !== '#') ? (
-                <div className={styles.photoGrid}>
-                  {attachments
-                    .filter((f) => isImageAttachment(f) && f.fileUrl && f.fileUrl !== '#')
-                    .map((f) => (
-                      <figure key={f.id} className={styles.photoCard}>
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img
-                          src={f.fileUrl}
-                          alt={f.comment || f.fileName}
-                          className={styles.photo}
-                        />
-                        <figcaption className={styles.photoCaption}>
-                          <Text size="xs" tone="mute">
-                            {f.fileName}
-                            {f.uploadedBy ? ` · ${f.uploadedBy}` : ''}
-                          </Text>
-                          <Text size="sm">
-                            {f.comment?.trim() ? f.comment : 'No comment'}
-                          </Text>
-                        </figcaption>
-                      </figure>
-                    ))}
-                </div>
-              ) : null}
-
-              {attachments.some((f) => !isImageAttachment(f) || !f.fileUrl || f.fileUrl === '#') ? (
-                <ul className={styles.files}>
-                  {attachments
-                    .filter((f) => !isImageAttachment(f) || !f.fileUrl || f.fileUrl === '#')
-                    .map((f) => (
-                      <li key={f.id}>
-                        {f.fileUrl && f.fileUrl !== '#' ? (
-                          <a href={f.fileUrl}>{f.fileName}</a>
-                        ) : (
-                          <span>
-                            {f.fileName}
-                            {!f.fileUrl || f.fileUrl === '#' ? ' (placeholder)' : ''}
-                          </span>
-                        )}
-                        {f.comment?.trim() ? (
-                          <div className={styles.fileComment}>{f.comment}</div>
-                        ) : null}
-                        {f.fileSize != null ? (
-                          <span className={styles.fileMeta}> · {f.fileSize} bytes</span>
-                        ) : null}
-                      </li>
-                    ))}
-                </ul>
-              ) : null}
-            </>
+            <ol className={styles.timeline}>
+              {reportUpdates.map((u) => (
+                <li key={u.id} className={styles.timelineItem}>
+                  <div className={styles.timelineMeta}>
+                    <Text size="xs" tone="mute">
+                      {u.date}
+                      {u.author ? ` · ${u.author}` : ''}
+                      {u.progressPct != null ? ` · ${u.progressPct}%` : ''}
+                    </Text>
+                  </div>
+                  <Text size="sm" className={styles.timelineNotes}>
+                    {u.notes}
+                  </Text>
+                  {u.findings?.trim() ? (
+                    <div className={styles.inlineFinding}>
+                      <span className={styles.inlineFindingLabel}>Finding</span>
+                      <Text size="sm">{u.findings}</Text>
+                    </div>
+                  ) : null}
+                </li>
+              ))}
+            </ol>
           )}
         </section>
 
         <section className={styles.section}>
-          <Text as="h2" display size="xl">
-            5. Work orders
+          <Text as="h2" display size="xl" className={styles.sectionTitle}>
+            5. Photos
+          </Text>
+          {photoAttachments.length === 0 ? (
+            <Text size="sm" tone="mute">
+              No photos attached.
+            </Text>
+          ) : (
+            <div className={styles.photoGrid}>
+              {photoAttachments.map((f) => (
+                <figure key={f.id} className={styles.photoCard}>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={f.fileUrl}
+                    alt={f.comment?.trim() || 'Activity photo'}
+                    className={styles.photo}
+                  />
+                  <figcaption className={styles.photoCaption}>
+                    <Text size="sm" className={styles.photoComment}>
+                      {f.comment?.trim() ? f.comment : '—'}
+                    </Text>
+                  </figcaption>
+                </figure>
+              ))}
+            </div>
+          )}
+
+          {otherAttachments.length > 0 ? (
+            <div className={styles.otherFiles}>
+              <Text size="xs" tone="mute" className={styles.otherFilesLabel}>
+                Other attachments
+              </Text>
+              <ul className={styles.files}>
+                {otherAttachments.map((f) => (
+                  <li key={f.id}>
+                    {f.fileUrl && f.fileUrl !== '#' ? (
+                      <a href={f.fileUrl}>{f.fileName}</a>
+                    ) : (
+                      <span>{f.fileName}</span>
+                    )}
+                    {f.comment?.trim() ? (
+                      <div className={styles.fileComment}>{f.comment}</div>
+                    ) : null}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+        </section>
+
+        <section className={styles.section}>
+          <Text as="h2" display size="xl" className={styles.sectionTitle}>
+            6. Work orders
           </Text>
           {workOrders.length === 0 ? (
             <Text size="sm" tone="mute">
@@ -254,8 +337,8 @@ export default async function ActivityReportPage({
         </section>
 
         <section className={styles.section}>
-          <Text as="h2" display size="xl">
-            6. Root cause analysis
+          <Text as="h2" display size="xl" className={styles.sectionTitle}>
+            7. Root cause analysis
           </Text>
           {rca ? (
             <dl className={styles.grid}>
@@ -288,23 +371,30 @@ export default async function ActivityReportPage({
         </section>
 
         <section className={styles.section}>
-          <Text as="h2" display size="xl">
-            7. Approval
+          <Text as="h2" display size="xl" className={styles.sectionTitle}>
+            8. Approval
           </Text>
           <div className={styles.signature}>
             <div>
               <Text size="sm" tone="mute">
                 Supervisor / Admin
               </Text>
-              <Text size="md">{rca?.verifiedByName ?? '________________'}</Text>
+              <Text size="md" className={styles.signatureLine}>
+                {rca?.verifiedByName ?? '________________'}
+              </Text>
             </div>
             <div>
               <Text size="sm" tone="mute">
                 Timestamp
               </Text>
-              <Text size="md">{rca?.verifiedAt ?? '________________'}</Text>
+              <Text size="md" className={styles.signatureLine}>
+                {rca?.verifiedAt ?? '________________'}
+              </Text>
             </div>
           </div>
+          <Text size="xs" tone="faint" className={styles.footerNote}>
+            Generated {generatedAt} · Alkinda / Lineage
+          </Text>
         </section>
       </article>
     </Stack>
