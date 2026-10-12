@@ -1,6 +1,10 @@
+import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import { Badge, Button, Stack, Text } from '@/components/design-system';
-import { PrintReportButton } from '@/components/domain/PrintReportButton';
+import {
+  PrintReportButton,
+  buildReportFileName,
+} from '@/components/domain/PrintReportButton';
 import { PageHeader } from '@/components/layout/PageHeader';
 import {
   labelActivityStatus,
@@ -29,6 +33,28 @@ function isSystemUpdate(u: DailyUpdate): boolean {
   return false;
 }
 
+function reportFileNameFromPack(pack: NonNullable<Awaited<ReturnType<typeof getActivityReportPack>>>) {
+  const primaryWo =
+    pack.workOrders.find((wo) => wo.externalRef?.trim())?.externalRef ?? null;
+  return buildReportFileName({
+    tagNumber: pack.equipment.tagNumber,
+    description: pack.equipment.description,
+    workOrderRef: primaryWo,
+  });
+}
+
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ activityId: string }>;
+}): Promise<Metadata> {
+  const { activityId } = await params;
+  const pack = await getActivityReportPack(activityId);
+  if (!pack) return { title: 'Report' };
+  // absolute: avoid layout template appending "· Lineage" to the PDF name
+  return { title: { absolute: reportFileNameFromPack(pack) } };
+}
+
 export default async function ActivityReportPage({
   params,
 }: {
@@ -40,6 +66,7 @@ export default async function ActivityReportPage({
 
   const { activity, equipment, updates, attachments, rca, workOrders } = pack;
   const generatedAt = new Date().toISOString().replace('T', ' ').slice(0, 19);
+  const pdfFileName = reportFileNameFromPack(pack);
 
   const reportUpdates = updates.filter((u) => !isSystemUpdate(u));
 
@@ -69,7 +96,7 @@ export default async function ActivityReportPage({
               <Button href={`/lineage/activities/${activity.id}`} variant="secondary">
                 Open activity
               </Button>
-              <PrintReportButton />
+              <PrintReportButton fileName={pdfFileName} />
             </>
           }
         />
