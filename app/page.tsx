@@ -1,33 +1,82 @@
-import { HealthCheck } from './health-check';
+import Link from 'next/link';
+import { Badge, Grid, Stack, Surface, Text } from '@/components/design-system';
+import { hostedApps, portalConfig } from '@/lib/apps/registry';
+import styles from './page.module.css';
 
-export default function HomePage() {
-  const ssrTime = new Date().toISOString();
+function statusTone(status: string) {
+  if (status === 'live') return 'ok' as const;
+  if (status === 'draft') return 'accent' as const;
+  return 'neutral' as const;
+}
 
+export default function PortalHomePage() {
   return (
-    <main style={{ maxWidth: 720, margin: '0 auto', padding: '2rem 1rem' }}>
-      <h1 style={{ fontSize: '1.75rem', margin: '0 0 0.5rem' }}>Hostinger Node Test</h1>
-      <p style={{ margin: '0 0 1rem', color: '#475569' }}>
-        If you see this title and the API JSON below, the Node runtime is serving Next.js correctly.
-      </p>
-      <p style={{ margin: '0 0 0.25rem' }}>
-        <strong>SSR time (server):</strong> <code>{ssrTime}</code>
-      </p>
-      <p style={{ margin: 0 }}>
-        <strong>Label:</strong>{' '}
-        <code>{process.env.NEXT_PUBLIC_LABEL ?? '(NEXT_PUBLIC_LABEL not set)'}</code>
-      </p>
-      <HealthCheck />
-      <section style={{ marginTop: '1.5rem' }}>
-        <h2 style={{ fontSize: '1.1rem', margin: '0 0 0.5rem' }}>Quick links</h2>
-        <ul style={{ margin: 0, paddingLeft: '1.25rem' }}>
-          <li>
-            <a href="/api/health">/api/health</a> (JSON)
-          </li>
-          <li>
-            <a href="/api/ping">/api/ping</a> (plain text)
-          </li>
-        </ul>
+    <div className={`atmosphere-grid ${styles.portal}`}>
+      <header className={`${styles.hero} animate-fade-up`}>
+        <Text eyebrow as="p">
+          {portalConfig.domainHint}
+        </Text>
+        <Text as="h1" display size="hero">
+          {portalConfig.name}
+        </Text>
+        <Text tone="mute" size="lg" className={styles.lede}>
+          Personal app platform on Hostinger. Lineage is the first app — more can land here
+          under the same domain without a new site each time.
+        </Text>
+      </header>
+
+      <section className="animate-fade-up stagger-2" aria-label="Hosted applications">
+        <Stack gap={4}>
+          <Text as="h2" display size="xl">
+            Applications
+          </Text>
+          <Grid columns={hostedApps.length === 1 ? 1 : 2} gap={4}>
+            {hostedApps.map((app) => (
+              <Surface
+                key={app.id}
+                pad={5}
+                href={app.status === 'planned' ? undefined : app.href}
+                className={styles.appCard}
+              >
+                <Stack gap={3}>
+                  <div
+                    className={styles.accentBar}
+                    style={{ background: app.accent }}
+                    aria-hidden
+                  />
+                  <Stack direction="horizontal" justify="between" align="center" wrap gap={2}>
+                    <Text as="h3" display size="lg">
+                      {app.name}
+                    </Text>
+                    <Badge tone={statusTone(app.status)}>{app.status}</Badge>
+                  </Stack>
+                  <Text size="sm" tone="mute">
+                    {app.tagline}
+                  </Text>
+                  {app.status !== 'planned' ? (
+                    <Text size="sm" weight="semibold" tone="accent">
+                      Open app →
+                    </Text>
+                  ) : (
+                    <Text size="sm" tone="faint">
+                      Coming soon
+                    </Text>
+                  )}
+                </Stack>
+              </Surface>
+            ))}
+          </Grid>
+        </Stack>
       </section>
-    </main>
+
+      <footer className={`${styles.footer} animate-fade-in stagger-3`}>
+        <Text size="sm" tone="mute">
+          alkinda.com · Hostinger Node.js · MySQL ·{' '}
+          <Link href="/api/health" className={styles.health}>
+            Health check
+          </Link>
+        </Text>
+      </footer>
+    </div>
   );
 }
