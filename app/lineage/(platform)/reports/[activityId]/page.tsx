@@ -302,7 +302,7 @@ export default async function ActivityReportPage({
 
         <section className={styles.section}>
           <Text as="h2" display size="xl" className={styles.sectionTitle}>
-            7. Root cause analysis
+            6. Root cause analysis
           </Text>
           {rca ? (
             <dl className={styles.grid}>
@@ -336,7 +336,7 @@ export default async function ActivityReportPage({
 
         <section className={styles.section}>
           <Text as="h2" display size="xl" className={styles.sectionTitle}>
-            8. Approval
+            7. Approval
           </Text>
           <div className={styles.signature}>
             <div>
