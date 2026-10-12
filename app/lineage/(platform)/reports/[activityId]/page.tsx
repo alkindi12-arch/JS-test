@@ -42,14 +42,6 @@ export default async function ActivityReportPage({
   const generatedAt = new Date().toISOString().replace('T', ' ').slice(0, 19);
 
   const reportUpdates = updates.filter((u) => !isSystemUpdate(u));
-  const findings = reportUpdates
-    .map((u) => ({
-      id: u.id,
-      date: u.date,
-      author: u.author,
-      text: (u.findings ?? '').trim(),
-    }))
-    .filter((f) => f.text.length > 0);
 
   const photoAttachments = attachments.filter(
     (f) => isImageAttachment(f) && f.fileUrl && f.fileUrl !== '#',
@@ -201,35 +193,7 @@ export default async function ActivityReportPage({
 
         <section className={styles.section}>
           <Text as="h2" display size="xl" className={styles.sectionTitle}>
-            3. Findings
-          </Text>
-          {findings.length === 0 ? (
-            <Text size="sm" tone="mute">
-              No findings recorded.
-            </Text>
-          ) : (
-            <ol className={styles.findings}>
-              {findings.map((f, index) => (
-                <li key={f.id}>
-                  <div className={styles.findingHead}>
-                    <span className={styles.findingIndex}>{index + 1}</span>
-                    <Text size="xs" tone="mute">
-                      {f.date}
-                      {f.author ? ` · ${f.author}` : ''}
-                    </Text>
-                  </div>
-                  <Text size="sm" className={styles.findingBody}>
-                    {f.text}
-                  </Text>
-                </li>
-              ))}
-            </ol>
-          )}
-        </section>
-
-        <section className={styles.section}>
-          <Text as="h2" display size="xl" className={styles.sectionTitle}>
-            4. Daily progress
+            3. Daily progress
           </Text>
           {reportUpdates.length === 0 ? (
             <Text size="sm" tone="mute">
@@ -263,7 +227,7 @@ export default async function ActivityReportPage({
 
         <section className={styles.section}>
           <Text as="h2" display size="xl" className={styles.sectionTitle}>
-            5. Photos
+            4. Photos
           </Text>
           {photoAttachments.length === 0 ? (
             <Text size="sm" tone="mute">
@@ -314,7 +278,7 @@ export default async function ActivityReportPage({
 
         <section className={styles.section}>
           <Text as="h2" display size="xl" className={styles.sectionTitle}>
-            6. Work orders
+            5. Work orders
           </Text>
           {workOrders.length === 0 ? (
             <Text size="sm" tone="mute">
