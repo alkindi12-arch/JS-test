@@ -1,10 +1,7 @@
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import { Badge, Button, Stack, Text } from '@/components/design-system';
-import {
-  PrintReportButton,
-  buildReportFileName,
-} from '@/components/domain/PrintReportButton';
+import { PrintReportButton } from '@/components/domain/PrintReportButton';
 import { PageHeader } from '@/components/layout/PageHeader';
 import {
   labelActivityStatus,
@@ -14,6 +11,7 @@ import {
 } from '@/lib/format';
 import { isImageAttachment } from '@/lib/data/mappers';
 import { getActivityReportPack } from '@/lib/data/plant';
+import { buildReportFileName } from '@/lib/reports/file-name';
 import type { DailyUpdate } from '@/lib/types/domain';
 import styles from './page.module.css';
 
